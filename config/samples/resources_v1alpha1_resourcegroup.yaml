@@ -1,0 +1,20 @@
+apiVersion: resources.klaudio.nubank.io/v1alpha1
+kind: ResourceGroup
+metadata:
+  labels:
+    app.kubernetes.io/name: klaudio
+    app.kubernetes.io/managed-by: kustomize
+  name: sample
+spec:
+  resources:
+    - name: sample
+      resourceRef: sample
+      properties:
+        name: whatever
+    - name: sample2
+      resourceRef: sample
+      properties:
+        name: ${resources.sample.status.whatever}
+        another:
+          complex:
+            field: ${resources.sample.status.whatever}

@@ -1,0 +1,27 @@
+# permissions for end users to edit resourcerefs.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: klaudio
+    app.kubernetes.io/managed-by: kustomize
+  name: resourceref-editor-role
+rules:
+- apiGroups:
+  - resources.klaudio.nubank.io
+  resources:
+  - resourcerefs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - resources.klaudio.nubank.io
+  resources:
+  - resourcerefs/status
+  verbs:
+  - get

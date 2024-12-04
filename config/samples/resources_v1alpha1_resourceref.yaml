@@ -1,0 +1,10 @@
+apiVersion: resources.klaudio.nubank.io/v1alpha1
+kind: ResourceRef
+metadata:
+  labels:
+    app.kubernetes.io/name: klaudio
+    app.kubernetes.io/managed-by: kustomize
+  name: sample
+spec:
+  group: services-capabilities
+  kind: zookeeper

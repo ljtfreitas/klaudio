@@ -1,0 +1,58 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - resources.klaudio.nubank.io
+  resources:
+  - resourcegroups
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - resources.klaudio.nubank.io
+  resources:
+  - resourcegroups/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - resources.klaudio.nubank.io
+  resources:
+  - resourcegroups/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - resources.klaudio.nubank.io
+  resources:
+  - resourcerefs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - resources.klaudio.nubank.io
+  resources:
+  - resourcerefs/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - resources.klaudio.nubank.io
+  resources:
+  - resourcerefs/status
+  verbs:
+  - get
+  - patch
+  - update
