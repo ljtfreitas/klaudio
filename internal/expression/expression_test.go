@@ -1,4 +1,4 @@
-package cel
+package expression
 
 import (
 	"testing"
@@ -125,4 +125,40 @@ func Test_Expression(t *testing.T) {
 			assert.Equal(t, "hello, world!", r)
 		})
 	})
+}
+
+func Test_ExpressionDependencies(t *testing.T) {
+	t.Run("We should be able to read dependencies from a cel expression", func(t *testing.T) {
+
+		t.Run("We are looking for resources dependencies...", func(t *testing.T) {
+			expression, err := Parse(`${resources.sample.whatever}`)
+
+			assert.NoError(t, err)
+
+			dependencies := expression.Dependencies()
+
+			assert.Equal(t, []string{"sample"}, dependencies)
+		})
+
+		t.Run("and for refs dependencies.", func(t *testing.T) {
+			expression, err := Parse(`${refs.sample.whatever}`)
+
+			assert.NoError(t, err)
+
+			dependencies := expression.Dependencies()
+
+			assert.Equal(t, []string{"sample"}, dependencies)
+		})
+
+		t.Run("Constant cel expressions doesn't have dependencies.", func(t *testing.T) {
+			expression, err := Parse(`${"hello"}`)
+
+			assert.NoError(t, err)
+
+			dependencies := expression.Dependencies()
+
+			assert.Empty(t, dependencies)
+		})
+	})
+
 }

@@ -1,0 +1,9 @@
+apiVersion: resources.klaudio.nubank.io/v1alpha1
+kind: ResourceGroupDeployment
+metadata:
+  labels:
+    app.kubernetes.io/name: klaudio
+    app.kubernetes.io/managed-by: kustomize
+  name: resourcegroupdeployment-sample
+spec:
+  # TODO(user): Add fields here

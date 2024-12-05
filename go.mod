@@ -3,6 +3,7 @@ module github.com/nubank/klaudio
 go 1.23.3
 
 require (
+	github.com/dominikbraun/graph v0.23.0
 	github.com/google/cel-go v0.22.1
 	github.com/onsi/ginkgo/v2 v2.17.1
 	github.com/onsi/gomega v1.32.0

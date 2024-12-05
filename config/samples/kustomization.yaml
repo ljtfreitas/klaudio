@@ -2,4 +2,5 @@
 resources:
 - resources_v1alpha1_resourceref.yaml
 - resources_v1alpha1_resourcegroup.yaml
+- resources_v1alpha1_resourcegroupdeployment.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

@@ -41,8 +41,8 @@ import (
 )
 
 var (
-	scheme   = runtime.NewScheme()
-	log = ctrl.Log.WithName("setup")
+	scheme = runtime.NewScheme()
+	log    = ctrl.Log.WithName("setup")
 )
 
 func init() {
@@ -142,7 +142,7 @@ func main() {
 	resourceRefReconciler := &controller.ResourceRefReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("resource-ref-controller")
+		Recorder: mgr.GetEventRecorderFor("resource-ref-controller"),
 	}
 	if err = resourceRefReconciler.SetupWithManager(mgr); err != nil {
 		log.Error(err, "unable to create controller", "controller", "ResourceRef")
@@ -155,6 +155,14 @@ func main() {
 	}
 	if err = resourceGroupReconciler.SetupWithManager(mgr); err != nil {
 		log.Error(err, "unable to create controller", "controller", "ResourceGroup")
+		os.Exit(1)
+	}
+	resourceGroupDeploymentReconciler := &controller.ResourceGroupDeploymentReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}
+	if err = resourceGroupDeploymentReconciler.SetupWithManager(mgr); err != nil {
+		log.Error(err, "unable to create controller", "controller", "ResourceGroupDeployment")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

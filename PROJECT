@@ -24,4 +24,13 @@ resources:
   kind: ResourceGroup
   path: github.com/nubank/klaudio/api/v1alpha1
   version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: klaudio.nubank.io
+  group: resources
+  kind: ResourceGroupDeployment
+  path: github.com/nubank/klaudio/api/v1alpha1
+  version: v1alpha1
 version: "3"

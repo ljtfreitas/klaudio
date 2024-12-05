@@ -18,20 +18,19 @@ package controller
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	resourcesv1alpha1 "github.com/nubank/klaudio/api/v1alpha1"
-	"github.com/nubank/klaudio/internal/cel"
 )
 
 // ResourceGroupReconciler reconciles a ResourceGroup object
@@ -56,6 +55,7 @@ type ResourceGroupReconciler struct {
 func (r *ResourceGroupReconciler) Reconcile(ctx context.Context, resourceGroup *resourcesv1alpha1.ResourceGroup) (ctrl.Result, error) {
 	log := log.FromContext(ctx).WithValues("resourceGroup", resourceGroup.Name)
 
+	// step 1: generate a dedicated namespace to resource group
 	namespace := &corev1.Namespace{}
 	if err := r.Client.Get(ctx, types.NamespacedName{Name: resourceGroup.Name}, namespace); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -86,72 +86,74 @@ func (r *ResourceGroupReconciler) Reconcile(ctx context.Context, resourceGroup *
 
 	log = log.WithValues("namespace", namespace.Name)
 
-	resources := make(map[string]any)
+	// knownResources := &resource.ResourceGroup{}
+	knowPlacements := sets.NewString()
 
+	// step 2: traverse all resources and their properties, to determine dependencies between them
 	for _, resource := range resourceGroup.Spec.Resources {
 		log = log.WithValues("resource", resource.Name)
 
+		// every resource must reference a ResourceRef object
 		resourceRef := &resourcesv1alpha1.ResourceRef{}
 		if err := r.Client.Get(ctx, types.NamespacedName{Name: resource.ResourceRef}, resourceRef); err != nil {
 			log.Error(err, "unable to fetch ResourceRef", "resourceRef", resource.Name)
 			return ctrl.Result{}, err
 		}
 
-		if resource.Properties != nil {
-			properties := make(map[string]any)
-			if err := json.Unmarshal(resource.Properties.Raw, &properties); err != nil {
-				log.Error(err, "unable to unmarshall properties")
+		// if err := knownResources.Add(resource.Name, resource.Properties); err != nil {
+		// 	log.Error(err, fmt.Sprintf("unable to unmarshal resource %s", resource.Name), "resourceRef", resource.Name)
+		// 	return ctrl.Result{}, err
+		// }
+
+		// additionally, we collect all placements from the target ResourceRef
+		knowPlacements = knowPlacements.Insert(resourceRef.Status.Placements...)
+	}
+
+	// step 3: generate one ResourceGroupDeployment to each placement
+	for _, placement := range knowPlacements.List() {
+		resourceGroupDeployment := &resourcesv1alpha1.ResourceGroupDeployment{}
+
+		log = log.WithValues("deployment", placement, "placement", placement)
+
+		if err := r.Client.Get(ctx, types.NamespacedName{Name: placement, Namespace: namespace.Name}, resourceGroupDeployment); err != nil {
+			if !apierrors.IsNotFound(err) {
+				log.Error(err, "unable to fetch ResourceGroupDeployment")
 				return ctrl.Result{}, err
 			}
 
-			expressions := make(map[string]any)
+			// ResourceGroupDeployment does not exist yet; just create it
+			resourceGroupDeployment.Name = placement
+			resourceGroupDeployment.Labels = map[string]string{
+				resourcesv1alpha1.Group + "/managedBy.group":   resourceGroup.GroupVersionKind().Group,
+				resourcesv1alpha1.Group + "/managedBy.version": resourceGroup.GroupVersionKind().Version,
+				resourcesv1alpha1.Group + "/managedBy.kind":    resourceGroup.GroupVersionKind().Kind,
+				resourcesv1alpha1.Group + "/managedBy.name":    resourceGroup.Name,
+				resourcesv1alpha1.Group + "/placement":         placement,
+			}
+			resourceGroupDeployment.Spec.Resources = resourceGroup.Spec.Resources
 
-			for name, value := range properties {
-				expression, err := readExpressionFrom(value)
-				if err != nil {
-					log.Error(err, fmt.Sprintf("unable to read properties from field %s", name))
-					return ctrl.Result{}, err
-				}
-				expressions[name] = expression
+			if err := ctrl.SetControllerReference(resourceGroup, resourceGroupDeployment, r.Scheme); err != nil {
+				log.Error(err, "unable to set ResourceGroupDeployment's ownerReference")
+				return ctrl.Result{}, err
 			}
 
-			resources[resource.Name] = expressions
+			if err := r.Client.Create(ctx, resourceGroupDeployment); err != nil {
+				log.Error(err, fmt.Sprintf("unable to create namespace %s", namespace.Name), "namespace", namespace.Name)
+				return ctrl.Result{}, err
+			}
+
+			log.Info(fmt.Sprintf("ResourceGroupDeployment to placement %s was created", placement))
 		}
+
 	}
 
 	return ctrl.Result{}, nil
-}
-
-func readExpressionFrom(value any) (any, error) {
-	switch value := value.(type) {
-	case map[string]any:
-		newMap := make(map[string]any)
-		for name, element := range value {
-			newElement, err := readExpressionFrom(element)
-			if err != nil {
-				return nil, err
-			}
-			newMap[name] = newElement
-		}
-		return newMap, nil
-	case []any:
-		newArray := make([]any, len(value))
-		for i, element := range value {
-			newElement, err := readExpressionFrom(element)
-			if err != nil {
-				return nil, err
-			}
-			newArray[i] = newElement
-		}
-		return newArray, nil
-	default:
-		return cel.Parse(value)
-	}
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ResourceGroupReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&resourcesv1alpha1.ResourceGroup{}).
+		Owns(&resourcesv1alpha1.ResourceGroupDeployment{}).
 		Complete(reconcile.AsReconciler[*resourcesv1alpha1.ResourceGroup](mgr.GetClient(), r))
 }
