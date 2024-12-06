@@ -109,6 +109,8 @@ func (r *ResourceGroupReconciler) Reconcile(ctx context.Context, resourceGroup *
 		knowPlacements = knowPlacements.Insert(resourceRef.Status.Placements...)
 	}
 
+	knowDeployments := make(resourcesv1alpha1.ResourceGroupDeploymentStatuses)
+
 	// step 3: generate one ResourceGroupDeployment to each placement
 	for _, placement := range knowPlacements.List() {
 		resourceGroupDeployment := &resourcesv1alpha1.ResourceGroupDeployment{}
@@ -131,6 +133,7 @@ func (r *ResourceGroupReconciler) Reconcile(ctx context.Context, resourceGroup *
 				resourcesv1alpha1.Group + "/placement":         placement,
 			}
 			resourceGroupDeployment.Spec.Resources = resourceGroup.Spec.Resources
+			resourceGroupDeployment.Status.Status = resourcesv1alpha1.DeploymentStarted
 
 			if err := ctrl.SetControllerReference(resourceGroup, resourceGroupDeployment, r.Scheme); err != nil {
 				log.Error(err, "unable to set ResourceGroupDeployment's ownerReference")
@@ -145,6 +148,14 @@ func (r *ResourceGroupReconciler) Reconcile(ctx context.Context, resourceGroup *
 			log.Info(fmt.Sprintf("ResourceGroupDeployment to placement %s was created", placement))
 		}
 
+		knowDeployments[resourceGroupDeployment.Name] = resourceGroupDeployment.Status
+
+	}
+
+	resourceGroup.Status.Deployments = knowDeployments
+	if err := r.Status().Update(ctx, resourceGroup); err != nil {
+		log.Error(err, "unable to update ResourceGroups's status")
+		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
 	return ctrl.Result{}, nil

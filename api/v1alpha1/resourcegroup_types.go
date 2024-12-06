@@ -38,10 +38,14 @@ type ResourceGroupElement struct {
 	Properties  *runtime.RawExtension `json:"properties"`
 }
 
+type ResourceGroupDeploymentStatuses map[string]ResourceGroupDeploymentStatus
+
 // ResourceGroupStatus defines the observed state of ResourceGroup
 type ResourceGroupStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
+
+	Deployments ResourceGroupDeploymentStatuses `json:"deployments"`
 }
 
 // +kubebuilder:object:root=true

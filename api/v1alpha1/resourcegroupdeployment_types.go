@@ -31,10 +31,18 @@ type ResourceGroupDeploymentSpec struct {
 	Resources []ResourceGroupElement `json:"resources,omitempty"`
 }
 
+type ResourceGroupDeploymentStatusDescription string
+
+var (
+	DeploymentStarted = ResourceGroupDeploymentStatusDescription("Started")
+)
+
 // ResourceGroupDeploymentStatus defines the observed state of ResourceGroupDeployment
 type ResourceGroupDeploymentStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
+
+	Status ResourceGroupDeploymentStatusDescription `json:"status"`
 }
 
 // +kubebuilder:object:root=true
