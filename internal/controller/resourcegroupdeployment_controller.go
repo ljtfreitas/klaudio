@@ -18,14 +18,17 @@ package controller
 
 import (
 	"context"
+	"fmt"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	resourcesv1alpha1 "github.com/nubank/klaudio/api/v1alpha1"
+	"github.com/nubank/klaudio/internal/resource"
 )
 
 // ResourceGroupDeploymentReconciler reconciles a ResourceGroupDeployment object
@@ -48,9 +51,45 @@ type ResourceGroupDeploymentReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.19.0/pkg/reconcile
 func (r *ResourceGroupDeploymentReconciler) Reconcile(ctx context.Context, resourceGroupDeployment *resourcesv1alpha1.ResourceGroupDeployment) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
+	log := log.FromContext(ctx).WithValues("resourceGroupDeployment", resourceGroupDeployment.Name)
 
-	// TODO(user): your logic here
+	knownResources := &resource.ResourceGroup{}
+
+	// step 1: traverse all resources to determine relationship between them
+	for _, candidate := range resourceGroupDeployment.Spec.Resources {
+		log = log.WithValues("resource", candidate.Name)
+
+		// every resource must reference a ResourceRef object
+		resourceRef := &resourcesv1alpha1.ResourceRef{}
+		if err := r.Client.Get(ctx, types.NamespacedName{Name: candidate.ResourceRef}, resourceRef); err != nil {
+			log.Error(err, "unable to fetch ResourceRef", "resourceRef", candidate.Name)
+			return ctrl.Result{}, err
+		}
+
+		resource, err := knownResources.Add(candidate.Name, candidate.Properties)
+		if err != nil {
+			log.Error(err, fmt.Sprintf("unable to unmarshal resource %s", candidate.Name), "resourceRef", candidate.Name)
+			return ctrl.Result{}, err
+		}
+
+		resource.Ref = resourceRef
+	}
+
+	// step 2: generate a dag
+	dag, err := knownResources.Graph()
+	if err != nil {
+		log.Error(err, "unable to generate a graph from deployment resources")
+		return ctrl.Result{}, err
+	}
+
+	// step3: in order, expand and generate each resource
+	for _, element := range dag {
+		resource, err := knownResources.Get(element)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+
+	}
 
 	return ctrl.Result{}, nil
 }

@@ -28,6 +28,7 @@ type ResourceGroupDeploymentSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
+	Placement string                 `json:"placement"`
 	Resources []ResourceGroupElement `json:"resources,omitempty"`
 }
 

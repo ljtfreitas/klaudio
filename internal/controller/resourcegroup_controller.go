@@ -58,38 +58,38 @@ func (r *ResourceGroupReconciler) Reconcile(ctx context.Context, resourceGroup *
 	// step 1: generate a dedicated namespace to resource group
 	namespace := &corev1.Namespace{}
 	if err := r.Client.Get(ctx, types.NamespacedName{Name: resourceGroup.Name}, namespace); err != nil {
-		if apierrors.IsNotFound(err) {
-			log.Info(fmt.Sprintf("there is no namespace to ResourceGroup %s; trying to generate...", resourceGroup.Name))
-
-			namespace.Name = resourceGroup.Name
-			namespace.Labels = map[string]string{
-				resourcesv1alpha1.Group + "/managedBy.group":   resourceGroup.GroupVersionKind().Group,
-				resourcesv1alpha1.Group + "/managedBy.version": resourceGroup.GroupVersionKind().Version,
-				resourcesv1alpha1.Group + "/managedBy.kind":    resourceGroup.GroupVersionKind().Kind,
-				resourcesv1alpha1.Group + "/managedBy.name":    resourceGroup.Name,
-			}
-			if err := ctrl.SetControllerReference(resourceGroup, namespace, r.Scheme); err != nil {
-				log.Error(err, "unable to set namespace's ownerReference", "namespace", namespace.Name)
-				return ctrl.Result{}, err
-			}
-
-			if err := r.Client.Create(ctx, namespace); err != nil {
-				log.Error(err, fmt.Sprintf("unable to create namespace %s", namespace.Name), "namespace", namespace.Name)
-				return ctrl.Result{}, err
-			}
-
-			log.Info(fmt.Sprintf("a namespace was created to ResourceGroup %s", resourceGroup.Name))
-		} else {
+		if !apierrors.IsNotFound(err) {
+			log.Error(err, "unable to fetch ResourceGroup's namespace")
 			return ctrl.Result{}, err
 		}
+
+		log.Info(fmt.Sprintf("there is no namespace to ResourceGroup %s; trying to generate...", resourceGroup.Name))
+
+		namespace.Name = resourceGroup.Name
+		namespace.Labels = map[string]string{
+			resourcesv1alpha1.Group + "/managedBy.group":   resourceGroup.GroupVersionKind().Group,
+			resourcesv1alpha1.Group + "/managedBy.version": resourceGroup.GroupVersionKind().Version,
+			resourcesv1alpha1.Group + "/managedBy.kind":    resourceGroup.GroupVersionKind().Kind,
+			resourcesv1alpha1.Group + "/managedBy.name":    resourceGroup.Name,
+		}
+		if err := ctrl.SetControllerReference(resourceGroup, namespace, r.Scheme); err != nil {
+			log.Error(err, "unable to set namespace's ownerReference", "namespace", namespace.Name)
+			return ctrl.Result{}, err
+		}
+
+		if err := r.Client.Create(ctx, namespace); err != nil {
+			log.Error(err, fmt.Sprintf("unable to create namespace %s", namespace.Name), "namespace", namespace.Name)
+			return ctrl.Result{}, err
+		}
+
+		log.Info(fmt.Sprintf("a namespace was created to ResourceGroup %s", resourceGroup.Name))
 	}
 
 	log = log.WithValues("namespace", namespace.Name)
 
-	// knownResources := &resource.ResourceGroup{}
 	knowPlacements := sets.NewString()
 
-	// step 2: traverse all resources and their properties, to determine dependencies between them
+	// step 1: traverse all resources and collect deployment placements
 	for _, resource := range resourceGroup.Spec.Resources {
 		log = log.WithValues("resource", resource.Name)
 
@@ -105,13 +105,12 @@ func (r *ResourceGroupReconciler) Reconcile(ctx context.Context, resourceGroup *
 		// 	return ctrl.Result{}, err
 		// }
 
-		// additionally, we collect all placements from the target ResourceRef
 		knowPlacements = knowPlacements.Insert(resourceRef.Status.Placements...)
 	}
 
 	knowDeployments := make(resourcesv1alpha1.ResourceGroupDeploymentStatuses)
 
-	// step 3: generate one ResourceGroupDeployment to each placement
+	// step 2: generate one ResourceGroupDeployment to each placement
 	for _, placement := range knowPlacements.List() {
 		resourceGroupDeployment := &resourcesv1alpha1.ResourceGroupDeployment{}
 
@@ -124,7 +123,7 @@ func (r *ResourceGroupReconciler) Reconcile(ctx context.Context, resourceGroup *
 			}
 
 			// ResourceGroupDeployment does not exist yet; just create it
-			resourceGroupDeployment.Name = placement
+			resourceGroupDeployment.Name = fmt.Sprintf("%s/%s", resourceGroup.Name, placement)
 			resourceGroupDeployment.Labels = map[string]string{
 				resourcesv1alpha1.Group + "/managedBy.group":   resourceGroup.GroupVersionKind().Group,
 				resourcesv1alpha1.Group + "/managedBy.version": resourceGroup.GroupVersionKind().Version,
@@ -132,8 +131,14 @@ func (r *ResourceGroupReconciler) Reconcile(ctx context.Context, resourceGroup *
 				resourcesv1alpha1.Group + "/managedBy.name":    resourceGroup.Name,
 				resourcesv1alpha1.Group + "/placement":         placement,
 			}
-			resourceGroupDeployment.Spec.Resources = resourceGroup.Spec.Resources
-			resourceGroupDeployment.Status.Status = resourcesv1alpha1.DeploymentStarted
+			resourceGroupDeployment.Namespace = namespace.Name
+			resourceGroupDeployment.Spec = resourcesv1alpha1.ResourceGroupDeploymentSpec{
+				Placement: placement,
+				Resources: resourceGroup.Spec.Resources,
+			}
+			resourceGroupDeployment.Status = resourcesv1alpha1.ResourceGroupDeploymentStatus{
+				Status: resourcesv1alpha1.DeploymentStarted,
+			}
 
 			if err := ctrl.SetControllerReference(resourceGroup, resourceGroupDeployment, r.Scheme); err != nil {
 				log.Error(err, "unable to set ResourceGroupDeployment's ownerReference")
@@ -149,13 +154,13 @@ func (r *ResourceGroupReconciler) Reconcile(ctx context.Context, resourceGroup *
 		}
 
 		knowDeployments[resourceGroupDeployment.Name] = resourceGroupDeployment.Status
-
 	}
 
 	resourceGroup.Status.Deployments = knowDeployments
+	resourceGroup.Status.Status = resourcesv1alpha1.ResourceGroupDeploymentInProgress
 	if err := r.Status().Update(ctx, resourceGroup); err != nil {
 		log.Error(err, "unable to update ResourceGroups's status")
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		return ctrl.Result{}, err
 	}
 
 	return ctrl.Result{}, nil

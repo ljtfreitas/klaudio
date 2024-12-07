@@ -6,6 +6,7 @@ import (
 	"maps"
 
 	"github.com/dominikbraun/graph"
+	resourcesv1alpha1 "github.com/nubank/klaudio/api/v1alpha1"
 	"github.com/nubank/klaudio/internal/expression"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -15,7 +16,16 @@ type ResourceGroup struct {
 	all map[string]*Resource
 }
 
+func (r ResourceGroup) Get(name string) (*Resource, error) {
+	resource, ok := r.all[name]
+	if !ok {
+		return nil, fmt.Errorf("resource %s is not registered", name)
+	}
+	return resource, nil
+}
+
 type Resource struct {
+	Ref          *resourcesv1alpha1.ResourceRef
 	properties   *ResourceProperties
 	dependencies []string
 }
@@ -101,9 +111,9 @@ func (r *ResourceGroup) Graph() ([]string, error) {
 	})
 }
 
-func (r *ResourceGroup) Add(name string, properties *runtime.RawExtension) error {
+func (r *ResourceGroup) Add(name string, properties *runtime.RawExtension) (*Resource, error) {
 	if _, ok := r.all[name]; ok {
-		return fmt.Errorf("resource '%s' is duplicated; check the spec", name)
+		return nil, fmt.Errorf("resource '%s' is duplicated; check the spec", name)
 	}
 
 	resource := &Resource{}
@@ -112,18 +122,18 @@ func (r *ResourceGroup) Add(name string, properties *runtime.RawExtension) error
 	if properties != nil {
 		propertiesToExpressions := make(map[string]any)
 		if err := json.Unmarshal(properties.Raw, &propertiesToExpressions); err != nil {
-			return fmt.Errorf("unable to unmarshall properties: %w", err)
+			return nil, fmt.Errorf("unable to unmarshall properties: %w", err)
 		}
 
 		resourcePropertiesAsExpressions, err := newResourceProperties(propertiesToExpressions)
 		if err != nil {
-			return fmt.Errorf("unable to read resource properties from %s: %w", name, err)
+			return nil, fmt.Errorf("unable to read resource properties from %s: %w", name, err)
 		}
 		resource.properties = resourcePropertiesAsExpressions
 		resource.dependencies = resourcePropertiesAsExpressions.dependencies
 
 	}
-	return nil
+	return resource, nil
 }
 
 func newResourceProperties(properties map[string]any) (*ResourceProperties, error) {
