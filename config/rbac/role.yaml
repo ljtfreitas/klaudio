@@ -7,6 +7,32 @@ rules:
 - apiGroups:
   - resources.klaudio.nubank.io
   resources:
+  - resourcegroupdeployments
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - resources.klaudio.nubank.io
+  resources:
+  - resourcegroupdeployments/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - resources.klaudio.nubank.io
+  resources:
+  - resourcegroupdeployments/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - resources.klaudio.nubank.io
+  resources:
   - resourcegroups
   verbs:
   - create

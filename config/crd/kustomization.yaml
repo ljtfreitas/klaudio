@@ -5,6 +5,7 @@ resources:
 - bases/resources.klaudio.nubank.io_resourcerefs.yaml
 - bases/resources.klaudio.nubank.io_resourcegroups.yaml
 - bases/resources.klaudio.nubank.io_resourcegroupdeployments.yaml
+- bases/resources.klaudio.nubank.io_resources.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:
@@ -17,6 +18,7 @@ patches:
 #- path: patches/cainjection_in_resourcerefs.yaml
 #- path: patches/cainjection_in_resourcegroups.yaml
 #- path: patches/cainjection_in_resourcegroupdeployments.yaml
+#- path: patches/cainjection_in_resources.yaml
 # +kubebuilder:scaffold:crdkustomizecainjectionpatch
 
 # [WEBHOOK] To enable webhook, uncomment the following section

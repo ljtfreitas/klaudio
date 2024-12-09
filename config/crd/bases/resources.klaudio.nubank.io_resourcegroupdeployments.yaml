@@ -4,20 +4,21 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.15.0
-  name: resourcegroups.resources.klaudio.nubank.io
+  name: resourcegroupdeployments.resources.klaudio.nubank.io
 spec:
   group: resources.klaudio.nubank.io
   names:
-    kind: ResourceGroup
-    listKind: ResourceGroupList
-    plural: resourcegroups
-    singular: resourcegroup
-  scope: Cluster
+    kind: ResourceGroupDeployment
+    listKind: ResourceGroupDeploymentList
+    plural: resourcegroupdeployments
+    singular: resourcegroupdeployment
+  scope: Namespaced
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: ResourceGroup is the Schema for the resourcegroups API
+        description: ResourceGroupDeployment is the Schema for the resourcegroupdeployments
+          API
         properties:
           apiVersion:
             description: |-
@@ -37,11 +38,14 @@ spec:
           metadata:
             type: object
           spec:
-            description: ResourceGroupSpec defines the desired state of ResourceGroup
+            description: ResourceGroupDeploymentSpec defines the desired state of
+              ResourceGroupDeployment
             properties:
               parameters:
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
+              placement:
+                type: string
               refs:
                 items:
                   properties:
@@ -75,25 +79,16 @@ spec:
                   - resourceRef
                   type: object
                 type: array
+            required:
+            - placement
             type: object
           status:
-            description: ResourceGroupStatus defines the observed state of ResourceGroup
+            description: ResourceGroupDeploymentStatus defines the observed state
+              of ResourceGroupDeployment
             properties:
-              deployments:
-                additionalProperties:
-                  description: ResourceGroupDeploymentStatus defines the observed
-                    state of ResourceGroupDeployment
-                  properties:
-                    status:
-                      type: string
-                  required:
-                  - status
-                  type: object
-                type: object
               status:
                 type: string
             required:
-            - deployments
             - status
             type: object
         type: object

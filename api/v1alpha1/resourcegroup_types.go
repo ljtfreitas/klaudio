@@ -29,7 +29,22 @@ type ResourceGroupSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	Resources []ResourceGroupElement `json:"resources,omitempty"`
+	Parameters *runtime.RawExtension  `json:"parameters,omitempty"`
+	Refs       []ResourceGroupRef     `json:"refs,omitempty"`
+	Resources  []ResourceGroupElement `json:"resources,omitempty"`
+}
+
+type ResourceGroupRefKind string
+
+const (
+	ResourceGroupRefConfigMap = ResourceGroupRefKind("ConfigMap")
+)
+
+type ResourceGroupRef struct {
+	Name       string               `json:"name"`
+	ApiVersion string               `json:"apiVersion"`
+	Kind       ResourceGroupRefKind `json:"kind"`
+	Namespace  string               `json:"namespace,omitempty"`
 }
 
 type ResourceGroupElement struct {

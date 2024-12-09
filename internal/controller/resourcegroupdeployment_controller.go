@@ -28,7 +28,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	resourcesv1alpha1 "github.com/nubank/klaudio/api/v1alpha1"
-	"github.com/nubank/klaudio/internal/resource"
+	"github.com/nubank/klaudio/internal/refs"
+	"github.com/nubank/klaudio/internal/resources"
 )
 
 // ResourceGroupDeploymentReconciler reconciles a ResourceGroupDeployment object
@@ -53,41 +54,60 @@ type ResourceGroupDeploymentReconciler struct {
 func (r *ResourceGroupDeploymentReconciler) Reconcile(ctx context.Context, resourceGroupDeployment *resourcesv1alpha1.ResourceGroupDeployment) (ctrl.Result, error) {
 	log := log.FromContext(ctx).WithValues("resourceGroupDeployment", resourceGroupDeployment.Name)
 
-	knownResources := &resource.ResourceGroup{}
+	references := refs.NewReferences()
 
-	// step 1: traverse all resources to determine relationship between them
+	// step 1: resolve references
+	for _, ref := range resourceGroupDeployment.Spec.Refs {
+		referenceObject, err := references.Add(ctx, r.Client, ref)
+		if err != nil {
+			log.Error(err, "unable to fetch Ref", "ref", ref.Name)
+			return ctrl.Result{}, err
+		}
+
+		log.Info(fmt.Sprintf("resolved reference: %+v", referenceObject))
+	}
+
+	resourceGroup := resources.NewResourceGroup()
+
+	// step 2: traverse all resources to determine relationship between them
 	for _, candidate := range resourceGroupDeployment.Spec.Resources {
-		log = log.WithValues("resource", candidate.Name)
+		l := log.WithValues("resource", candidate.Name)
 
 		// every resource must reference a ResourceRef object
 		resourceRef := &resourcesv1alpha1.ResourceRef{}
 		if err := r.Client.Get(ctx, types.NamespacedName{Name: candidate.ResourceRef}, resourceRef); err != nil {
-			log.Error(err, "unable to fetch ResourceRef", "resourceRef", candidate.Name)
+			l.Error(err, "unable to fetch ResourceRef", "resourceRef", candidate.Name)
 			return ctrl.Result{}, err
 		}
 
-		resource, err := knownResources.Add(candidate.Name, candidate.Properties)
+		resource, err := resourceGroup.Add(candidate.Name, candidate.Properties)
 		if err != nil {
-			log.Error(err, fmt.Sprintf("unable to unmarshal resource %s", candidate.Name), "resourceRef", candidate.Name)
+			l.Error(err, fmt.Sprintf("unable to unmarshal resource %s", candidate.Name), "resourceRef", candidate.Name)
 			return ctrl.Result{}, err
 		}
 
 		resource.Ref = resourceRef
 	}
 
-	// step 2: generate a dag
-	dag, err := knownResources.Graph()
+	// step 3: generate a dag
+	dag, err := resourceGroup.Graph()
 	if err != nil {
 		log.Error(err, "unable to generate a graph from deployment resources")
 		return ctrl.Result{}, err
 	}
 
-	// step3: in order, expand and generate each resource
-	for _, element := range dag {
-		resource, err := knownResources.Get(element)
+	log.Info(fmt.Sprintf("Generated dag: %s", dag))
+
+	// step 4: in order, expand and generate each resource
+	for _, resourceName := range dag {
+		resource, err := resourceGroup.Get(resourceName)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
+
+		l := log.WithValues("resource", resourceName)
+
+		l.Info(fmt.Sprintf("starting deploy from resource %s...", resourceName))
 
 	}
 

@@ -18,58 +18,47 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// ResourceGroupDeploymentSpec defines the desired state of ResourceGroupDeployment
-type ResourceGroupDeploymentSpec struct {
+// ResourceSpec defines the desired state of Resource
+type ResourceSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	Placement  string                 `json:"placement"`
-	Refs       []ResourceGroupRef     `json:"refs,omitempty"`
-	Parameters *runtime.RawExtension  `json:"parameters,omitempty"`
-	Resources  []ResourceGroupElement `json:"resources,omitempty"`
+	// Foo is an example field of Resource. Edit resource_types.go to remove/update
+	Foo string `json:"foo,omitempty"`
 }
 
-type ResourceGroupDeploymentStatusDescription string
-
-const (
-	DeploymentStarted = ResourceGroupDeploymentStatusDescription("Started")
-)
-
-// ResourceGroupDeploymentStatus defines the observed state of ResourceGroupDeployment
-type ResourceGroupDeploymentStatus struct {
+// ResourceStatus defines the observed state of Resource
+type ResourceStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-
-	Status ResourceGroupDeploymentStatusDescription `json:"status"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
-// ResourceGroupDeployment is the Schema for the resourcegroupdeployments API
-type ResourceGroupDeployment struct {
+// Resource is the Schema for the resources API
+type Resource struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   ResourceGroupDeploymentSpec   `json:"spec,omitempty"`
-	Status ResourceGroupDeploymentStatus `json:"status,omitempty"`
+	Spec   ResourceSpec   `json:"spec,omitempty"`
+	Status ResourceStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
-// ResourceGroupDeploymentList contains a list of ResourceGroupDeployment
-type ResourceGroupDeploymentList struct {
+// ResourceList contains a list of Resource
+type ResourceList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []ResourceGroupDeployment `json:"items"`
+	Items           []Resource `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&ResourceGroupDeployment{}, &ResourceGroupDeploymentList{})
+	SchemeBuilder.Register(&Resource{}, &ResourceList{})
 }

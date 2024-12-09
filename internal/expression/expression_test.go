@@ -137,7 +137,7 @@ func Test_ExpressionDependencies(t *testing.T) {
 
 			dependencies := expression.Dependencies()
 
-			assert.Equal(t, []string{"sample"}, dependencies)
+			assert.Equal(t, []string{"resources.sample"}, dependencies)
 		})
 
 		t.Run("and for refs dependencies.", func(t *testing.T) {
@@ -147,7 +147,7 @@ func Test_ExpressionDependencies(t *testing.T) {
 
 			dependencies := expression.Dependencies()
 
-			assert.Equal(t, []string{"sample"}, dependencies)
+			assert.Equal(t, []string{"refs.sample"}, dependencies)
 		})
 
 		t.Run("Constant cel expressions doesn't have dependencies.", func(t *testing.T) {

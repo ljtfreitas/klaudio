@@ -1,4 +1,4 @@
-package resource
+package resources
 
 import (
 	"encoding/json"
@@ -28,13 +28,13 @@ func Test_ResourcesWithoutDependencies(t *testing.T) {
 	propertiesAsBytes, err := json.Marshal(sourceProperties)
 	assert.NoError(t, err)
 
-	err = resourceGroup.Add("my-resource", &runtime.RawExtension{Raw: propertiesAsBytes})
+	resource, err := resourceGroup.Add("my-resource", &runtime.RawExtension{Raw: propertiesAsBytes})
 	assert.NoError(t, err)
 
 	assert.Len(t, resourceGroup.all, 1)
 
-	resource := resourceGroup.all["my-resource"]
 	assert.NotNil(t, resource)
+	assert.Same(t, resource, resourceGroup.all["my-resource"])
 
 	resourceProperties := resource.properties
 	assert.Len(t, resourceProperties.properties, len(sourceProperties))
@@ -121,13 +121,13 @@ func Test_ResourcesWithDependencies(t *testing.T) {
 	propertiesAsBytes, err := json.Marshal(sourceProperties)
 	assert.NoError(t, err)
 
-	err = resourceGroup.Add("my-resource", &runtime.RawExtension{Raw: propertiesAsBytes})
+	resource, err := resourceGroup.Add("my-resource", &runtime.RawExtension{Raw: propertiesAsBytes})
 	assert.NoError(t, err)
 
 	assert.Len(t, resourceGroup.all, 1)
 
-	resource := resourceGroup.all["my-resource"]
 	assert.NotNil(t, resource)
+	assert.Same(t, resource, resourceGroup.all["my-resource"])
 
 	resourceProperties := resource.properties
 	assert.Len(t, resourceProperties.properties, len(sourceProperties))
@@ -149,7 +149,7 @@ func Test_ResourcesWithDependencies(t *testing.T) {
 
 			expressionResourceProperty := field.(*ExpressionResourceProperty)
 			assert.Equal(t, "object.field", expressionResourceProperty.Name())
-			assert.Equal(t, []string{"other"}, expressionResourceProperty.dependencies)
+			assert.Equal(t, []string{"resources.other"}, expressionResourceProperty.dependencies)
 
 			expression := expressionResourceProperty.expression
 			assert.NotNil(t, expression)
@@ -173,7 +173,7 @@ func Test_ResourcesWithDependencies(t *testing.T) {
 
 				expressionResourceProperty := value.(*ExpressionResourceProperty)
 				assert.Equal(t, fmt.Sprintf("array[%d]", i), expressionResourceProperty.Name())
-				assert.Equal(t, []string{"other"}, expressionResourceProperty.dependencies)
+				assert.Equal(t, []string{"resources.other"}, expressionResourceProperty.dependencies)
 
 				expression := expressionResourceProperty.expression
 				assert.NotNil(t, expression)
@@ -191,7 +191,7 @@ func Test_ResourcesWithDependencies(t *testing.T) {
 		expressionResourceProperty := resourceProperty.(*ExpressionResourceProperty)
 
 		assert.Equal(t, "scalar", expressionResourceProperty.Name())
-		assert.Equal(t, []string{"other"}, expressionResourceProperty.dependencies)
+		assert.Equal(t, []string{"resources.other"}, expressionResourceProperty.dependencies)
 
 		expression := expressionResourceProperty.expression
 		assert.NotNil(t, expression)
@@ -203,10 +203,11 @@ func Test_ResourcesMustBeUnique(t *testing.T) {
 
 	resourceGroup := NewResourceGroup()
 
-	err := resourceGroup.Add("my-resource", nil)
+	resource, err := resourceGroup.Add("my-resource", nil)
 	assert.NoError(t, err)
+	assert.NotNil(t, resource)
 
-	err = resourceGroup.Add("my-resource", nil)
+	_, err = resourceGroup.Add("my-resource", nil)
 	assert.Error(t, err)
 }
 
@@ -214,7 +215,7 @@ func Test_ResourcesGraph(t *testing.T) {
 	resourceGroup := NewResourceGroup()
 
 	// no dependencies
-	err := resourceGroup.Add("resource-one", nil)
+	_, err := resourceGroup.Add("resource-one", nil)
 	assert.NoError(t, err)
 
 	sourcePropertiesFromResourceTwo := map[string]any{
@@ -225,7 +226,7 @@ func Test_ResourcesGraph(t *testing.T) {
 	assert.NoError(t, err)
 
 	// depends on resource-one
-	err = resourceGroup.Add("resource-two", &runtime.RawExtension{Raw: propertiesAsBytes})
+	_, err = resourceGroup.Add("resource-two", &runtime.RawExtension{Raw: propertiesAsBytes})
 	assert.NoError(t, err)
 
 	sourcePropertiesFromResourceThree := map[string]any{
@@ -236,7 +237,7 @@ func Test_ResourcesGraph(t *testing.T) {
 	assert.NoError(t, err)
 
 	// depends on resource-two
-	err = resourceGroup.Add("resource-three", &runtime.RawExtension{Raw: propertiesAsBytes})
+	_, err = resourceGroup.Add("resource-three", &runtime.RawExtension{Raw: propertiesAsBytes})
 	assert.NoError(t, err)
 
 	sourcePropertiesFromResourceFour := map[string]any{
@@ -247,15 +248,23 @@ func Test_ResourcesGraph(t *testing.T) {
 	assert.NoError(t, err)
 
 	// depends on resource-one
-	err = resourceGroup.Add("resource-four", &runtime.RawExtension{Raw: propertiesAsBytes})
+	_, err = resourceGroup.Add("resource-four", &runtime.RawExtension{Raw: propertiesAsBytes})
 	assert.NoError(t, err)
 
 	// no dependencies
-	err = resourceGroup.Add("resource-five", nil)
+	_, err = resourceGroup.Add("resource-five", nil)
 	assert.NoError(t, err)
 
 	dag, err := resourceGroup.Graph()
 	assert.NoError(t, err)
 
-	assert.Equal(t, []string{"resource-five", "resource-one", "resource-four", "resource-two", "resource-three"}, dag)
+	expected := []string{
+		"resources.resource-five",
+		"resources.resource-one",
+		"resources.resource-four",
+		"resources.resource-two",
+		"resources.resource-three",
+	}
+
+	assert.Equal(t, expected, dag)
 }

@@ -1,9 +1,10 @@
-package resource
+package resources
 
 import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"regexp"
 
 	"github.com/dominikbraun/graph"
 	resourcesv1alpha1 "github.com/nubank/klaudio/api/v1alpha1"
@@ -12,11 +13,21 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
+var (
+	resourcesExpressionRe = regexp.MustCompile(`resources\.([^.]+)`)
+)
+
 type ResourceGroup struct {
 	all map[string]*Resource
 }
 
 func (r ResourceGroup) Get(name string) (*Resource, error) {
+	matches := resourcesExpressionRe.FindStringSubmatch(name)
+
+	if len(matches) != 0 {
+		name = matches[1]
+	}
+
 	resource, ok := r.all[name]
 	if !ok {
 		return nil, fmt.Errorf("resource %s is not registered", name)
@@ -30,6 +41,12 @@ type Resource struct {
 	dependencies []string
 }
 
+func (r *Resource) Expand() {
+	for _, property := range r.properties.properties {
+		property.Resolve()
+	}
+}
+
 type ResourceProperties struct {
 	properties   map[string]ResourceProperty
 	dependencies []string
@@ -38,6 +55,7 @@ type ResourceProperties struct {
 type ResourceProperty interface {
 	Name() string
 	Dependencies() []string
+	Resolve()
 }
 
 type ObjectResourceProperty struct {
@@ -54,6 +72,12 @@ func (p ObjectResourceProperty) Dependencies() []string {
 	return p.dependencies
 }
 
+func (p ObjectResourceProperty) Resolve() {
+	for _, property := range p.properties {
+		property.Resolve()
+	}
+}
+
 type ArrayResourceProperty struct {
 	name         string
 	properties   []ResourceProperty
@@ -66,6 +90,12 @@ func (p ArrayResourceProperty) Name() string {
 
 func (p ArrayResourceProperty) Dependencies() []string {
 	return p.dependencies
+}
+
+func (p ArrayResourceProperty) Resolve() {
+	for _, property := range p.properties {
+		property.Resolve()
+	}
 }
 
 type ExpressionResourceProperty struct {
@@ -82,6 +112,9 @@ func (p ExpressionResourceProperty) Dependencies() []string {
 	return p.dependencies
 }
 
+func (p ExpressionResourceProperty) Resolve() {
+}
+
 func NewResourceGroup() *ResourceGroup {
 	return &ResourceGroup{all: make(map[string]*Resource)}
 }
@@ -89,8 +122,12 @@ func NewResourceGroup() *ResourceGroup {
 func (r *ResourceGroup) Graph() ([]string, error) {
 	resourcesDag := graph.New(graph.StringHash, graph.Directed(), graph.PreventCycles())
 
+	vertexNameFn := func(name string) string {
+		return fmt.Sprintf("resources.%s", name)
+	}
+
 	for name := range maps.Keys(r.all) {
-		err := resourcesDag.AddVertex(name)
+		err := resourcesDag.AddVertex(vertexNameFn(name))
 		if err != nil {
 			return nil, err
 		}
@@ -99,7 +136,7 @@ func (r *ResourceGroup) Graph() ([]string, error) {
 	for name, resource := range r.all {
 		for _, dependency := range resource.dependencies {
 			fmt.Printf("vertex %s, edge %s\n", name, dependency)
-			err := resourcesDag.AddEdge(dependency, name)
+			err := resourcesDag.AddEdge(dependency, vertexNameFn(name))
 			if err != nil {
 				return nil, err
 			}
@@ -158,24 +195,6 @@ func newResourceProperties(properties map[string]any) (*ResourceProperties, erro
 	return resourceProperties, nil
 }
 
-func readDependencies(value any) []string {
-	dependencies := make([]string, 0)
-	switch value := value.(type) {
-	case map[string]any:
-		for _, element := range value {
-			dependencies = append(dependencies, readDependencies(element)...)
-		}
-	case []expression.Expression:
-		for _, e := range value {
-			dependencies = append(dependencies, e.Dependencies()...)
-		}
-	case expression.Expression:
-		dependencies = append(dependencies, value.Dependencies()...)
-	}
-
-	return dependencies
-}
-
 func readProperty(name string, value any) (ResourceProperty, error) {
 	switch value := value.(type) {
 	case map[string]any:
@@ -187,12 +206,12 @@ func readProperty(name string, value any) (ResourceProperty, error) {
 		if err != nil {
 			return nil, err
 		}
-		scalarResourceProperty := &ExpressionResourceProperty{
+		expressionResourceProperty := &ExpressionResourceProperty{
 			name:         name,
 			expression:   e,
 			dependencies: e.Dependencies(),
 		}
-		return scalarResourceProperty, nil
+		return expressionResourceProperty, nil
 	}
 }
 

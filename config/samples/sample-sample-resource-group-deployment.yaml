@@ -1,0 +1,41 @@
+apiVersion: resources.klaudio.nubank.io/v1alpha1
+kind: ResourceGroupDeployment
+metadata:
+  creationTimestamp: "2024-12-08T22:33:33Z"
+  generation: 1
+  labels:
+    resources.klaudio.nubank.io/managedBy.group: resources.klaudio.nubank.io
+    resources.klaudio.nubank.io/managedBy.kind: ResourceGroup
+    resources.klaudio.nubank.io/managedBy.name: sample
+    resources.klaudio.nubank.io/managedBy.version: v1alpha1
+    resources.klaudio.nubank.io/placement: sample
+  name: sample.sample
+  namespace: sample
+  ownerReferences:
+  - apiVersion: resources.klaudio.nubank.io/v1alpha1
+    blockOwnerDeletion: true
+    controller: true
+    kind: ResourceGroup
+    name: sample
+    uid: 89bf6ba3-3264-46c9-8726-9d3cb3fc513e
+  resourceVersion: "1028586"
+  uid: 435abd5d-b4ec-4b67-93bd-e9746b1583a9
+spec:
+  placement: sample
+  refs:
+    - apiVersion: v1
+      kind: ConfigMap
+      name: sample
+      namespace: default
+  resources:
+  - name: sample
+    properties:
+      name: whatever
+    resourceRef: sample
+  - name: sample2
+    properties:
+      another:
+        complex:
+          field: ${resources.sample.status.whatever}
+      name: ${resources.sample.status.whatever}
+    resourceRef: sample

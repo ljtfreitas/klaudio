@@ -30,7 +30,7 @@ import (
 	resourcesv1alpha1 "github.com/nubank/klaudio/api/v1alpha1"
 )
 
-var _ = Describe("ResourceGroupDeployment Controller", func() {
+var _ = Describe("Resource Controller", func() {
 	Context("When reconciling a resource", func() {
 		const resourceName = "test-resource"
 
@@ -40,13 +40,13 @@ var _ = Describe("ResourceGroupDeployment Controller", func() {
 			Name:      resourceName,
 			Namespace: "default", // TODO(user):Modify as needed
 		}
-		resourcegroupdeployment := &resourcesv1alpha1.ResourceGroupDeployment{}
+		resource := &resourcesv1alpha1.Resource{}
 
 		BeforeEach(func() {
-			By("creating the custom resource for the Kind ResourceGroupDeployment")
-			err := k8sClient.Get(ctx, typeNamespacedName, resourcegroupdeployment)
+			By("creating the custom resource for the Kind Resource")
+			err := k8sClient.Get(ctx, typeNamespacedName, resource)
 			if err != nil && errors.IsNotFound(err) {
-				resource := &resourcesv1alpha1.ResourceGroupDeployment{
+				resource := &resourcesv1alpha1.Resource{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      resourceName,
 						Namespace: "default",
@@ -59,23 +59,21 @@ var _ = Describe("ResourceGroupDeployment Controller", func() {
 
 		AfterEach(func() {
 			// TODO(user): Cleanup logic after each test, like removing the resource instance.
-			resource := &resourcesv1alpha1.ResourceGroupDeployment{}
+			resource := &resourcesv1alpha1.Resource{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Cleanup the specific resource instance ResourceGroupDeployment")
+			By("Cleanup the specific resource instance Resource")
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 		})
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
-			controllerReconciler := &ResourceGroupDeploymentReconciler{
+			controllerReconciler := &ResourceReconciler{
 				Client: k8sClient,
 				Scheme: k8sClient.Scheme(),
 			}
 
-			reconciler := reconcile.AsReconciler[*resourcesv1alpha1.ResourceGroupDeployment](k8sClient, controllerReconciler)
-
-			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())

@@ -16,8 +16,8 @@ const (
 
 var (
 	celExpressionRe        = regexp.MustCompile(`\$\{([^}]+)\}`)
-	resourcesExpressionRe  = regexp.MustCompile(`resources\.([^.]+)\.`)
-	referencesExpressionRe = regexp.MustCompile(`refs\.([^.]+)\.`)
+	resourcesExpressionRe  = regexp.MustCompile(`(resources\.[^.]+)\.`)
+	referencesExpressionRe = regexp.MustCompile(`(refs\.[^.]+)\.`)
 )
 
 func SearchExpressions(expression string) []string {

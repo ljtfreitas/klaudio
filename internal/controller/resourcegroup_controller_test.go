@@ -73,7 +73,9 @@ var _ = Describe("ResourceGroup Controller", func() {
 				Scheme: k8sClient.Scheme(),
 			}
 
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+			reconciler := reconcile.AsReconciler[*resourcesv1alpha1.ResourceGroup](k8sClient, controllerReconciler)
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
