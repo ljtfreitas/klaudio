@@ -7,14 +7,15 @@ import (
 	"regexp"
 
 	"github.com/dominikbraun/graph"
-	resourcesv1alpha1 "github.com/nubank/klaudio/api/v1alpha1"
+	api "github.com/nubank/klaudio/api/v1alpha1"
 	"github.com/nubank/klaudio/internal/expression"
+	"github.com/nubank/klaudio/internal/refs"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 var (
-	resourcesExpressionRe = regexp.MustCompile(`resources\.([^.]+)`)
+	resourcesRe = regexp.MustCompile(`resources\.([^.]+)`)
 )
 
 type ResourceGroup struct {
@@ -22,7 +23,7 @@ type ResourceGroup struct {
 }
 
 func (r ResourceGroup) Get(name string) (*Resource, error) {
-	matches := resourcesExpressionRe.FindStringSubmatch(name)
+	matches := resourcesRe.FindStringSubmatch(name)
 
 	if len(matches) != 0 {
 		name = matches[1]
@@ -35,17 +36,55 @@ func (r ResourceGroup) Get(name string) (*Resource, error) {
 	return resource, nil
 }
 
+type ResourcePropertiesArgs struct {
+	all map[string]any
+}
+
+func NewResourcePropertiesArgs(parameters map[string]any, refs *refs.References) *ResourcePropertiesArgs {
+	variables := make(map[string]any)
+	variables["parameters"] = parameters
+
+	newRefs := make(map[string]any)
+	for name, value := range refs.All() {
+		newRefs[name] = value
+	}
+	variables["refs"] = newRefs
+
+	return &ResourcePropertiesArgs{all: variables}
+}
+
+func (r *ResourcePropertiesArgs) WithResource(name string, resource *api.Resource) *ResourcePropertiesArgs {
+	resources, ok := r.all["resources"].(map[string]any)
+	if !ok {
+		resources = make(map[string]any)
+	}
+
+	resources[name] = resource
+	r.all["resources"] = resources
+
+	return r
+}
+
 type Resource struct {
-	Ref          *resourcesv1alpha1.ResourceRef
+	Ref          *api.ResourceRef
 	properties   *ResourceProperties
 	dependencies []string
 }
 
-func (r *Resource) Expand() {
-	for _, property := range r.properties.properties {
-		property.Resolve()
+func (r *Resource) Evaluate(args *ResourcePropertiesArgs) (ExpandedResourceProperties, error) {
+	newProperties := make(map[string]any)
+	for name, property := range r.properties.properties {
+		expanded, err := property.Evaluate(args)
+		if err != nil {
+			return nil, err
+		}
+		newProperties[name] = expanded
 	}
+
+	return ExpandedResourceProperties(newProperties), nil
 }
+
+type ExpandedResourceProperties map[string]any
 
 type ResourceProperties struct {
 	properties   map[string]ResourceProperty
@@ -55,7 +94,7 @@ type ResourceProperties struct {
 type ResourceProperty interface {
 	Name() string
 	Dependencies() []string
-	Resolve()
+	Evaluate(*ResourcePropertiesArgs) (any, error)
 }
 
 type ObjectResourceProperty struct {
@@ -72,10 +111,16 @@ func (p ObjectResourceProperty) Dependencies() []string {
 	return p.dependencies
 }
 
-func (p ObjectResourceProperty) Resolve() {
-	for _, property := range p.properties {
-		property.Resolve()
+func (p ObjectResourceProperty) Evaluate(args *ResourcePropertiesArgs) (any, error) {
+	newMap := make(map[string]any)
+	for name, property := range p.properties {
+		newValue, err := property.Evaluate(args)
+		if err != nil {
+			return nil, err
+		}
+		newMap[name] = newValue
 	}
+	return newMap, nil
 }
 
 type ArrayResourceProperty struct {
@@ -92,10 +137,16 @@ func (p ArrayResourceProperty) Dependencies() []string {
 	return p.dependencies
 }
 
-func (p ArrayResourceProperty) Resolve() {
+func (p ArrayResourceProperty) Evaluate(args *ResourcePropertiesArgs) (any, error) {
+	newArray := make([]any, len(p.properties))
 	for _, property := range p.properties {
-		property.Resolve()
+		newValue, err := property.Evaluate(args)
+		if err != nil {
+			return nil, err
+		}
+		newArray = append(newArray, newValue)
 	}
+	return newArray, nil
 }
 
 type ExpressionResourceProperty struct {
@@ -112,7 +163,8 @@ func (p ExpressionResourceProperty) Dependencies() []string {
 	return p.dependencies
 }
 
-func (p ExpressionResourceProperty) Resolve() {
+func (p ExpressionResourceProperty) Evaluate(args *ResourcePropertiesArgs) (any, error) {
+	return p.expression.Evaluate(args.all)
 }
 
 func NewResourceGroup() *ResourceGroup {
@@ -148,7 +200,7 @@ func (r *ResourceGroup) Graph() ([]string, error) {
 	})
 }
 
-func (r *ResourceGroup) Add(name string, properties *runtime.RawExtension) (*Resource, error) {
+func (r *ResourceGroup) NewResource(name string, properties *runtime.RawExtension) (*Resource, error) {
 	if _, ok := r.all[name]; ok {
 		return nil, fmt.Errorf("resource '%s' is duplicated; check the spec", name)
 	}

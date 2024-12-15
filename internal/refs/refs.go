@@ -3,6 +3,7 @@ package refs
 import (
 	"context"
 	"fmt"
+	"iter"
 
 	resourcesv1alpha1 "github.com/nubank/klaudio/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -19,11 +20,21 @@ func NewReferences() *References {
 	return &References{all: make(map[string]ReferenceObject)}
 }
 
+func (r *References) All() iter.Seq2[string, ReferenceObject] {
+	return func(yield func(k string, v ReferenceObject) bool) {
+		for k, v := range r.all {
+			if !yield(k, v) {
+				return
+			}
+		}
+	}
+}
+
 type ReferenceObject interface{}
 
 type ReferenceValue any
 
-func (r *References) Add(ctx context.Context, client client.Client, ref resourcesv1alpha1.ResourceGroupRef) (ReferenceObject, error) {
+func (r *References) NewReference(ctx context.Context, client client.Client, ref resourcesv1alpha1.ResourceGroupRef) (ReferenceObject, error) {
 	unknown := &unstructured.Unstructured{}
 	groupVersion, err := schema.ParseGroupVersion(ref.ApiVersion)
 	if err != nil {

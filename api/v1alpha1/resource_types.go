@@ -18,6 +18,7 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
@@ -28,14 +29,24 @@ type ResourceSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Foo is an example field of Resource. Edit resource_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	Placement   string                `json:"placement"`
+	ResourceRef string                `json:"resourceRef"`
+	Properties  *runtime.RawExtension `json:"properties"`
 }
+
+type ResourceStatusDescription string
+
+const (
+	ResourceStatusDeploying = "Deploying"
+	ResourceStatusDone      = "Done"
+)
 
 // ResourceStatus defines the observed state of Resource
 type ResourceStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
+
+	Status ResourceStatusDescription `json:"status"`
 }
 
 // +kubebuilder:object:root=true

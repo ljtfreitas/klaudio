@@ -65,7 +65,7 @@ func (e CelExpression) Dependencies() []string {
 	return dependencies
 }
 
-func (e CelExpression) Evaluate(variables map[string]any) (string, error) {
+func (e CelExpression) Evaluate(variables map[string]any) (any, error) {
 	celEnvironmentOpts := make([]cel.EnvOption, 0)
 	celEnvironmentOpts = append(celEnvironmentOpts,
 		ext.Lists(),
@@ -96,5 +96,5 @@ func (e CelExpression) Evaluate(variables map[string]any) (string, error) {
 		return "", fmt.Errorf("failed evaluating expression %s: %w", source, err)
 	}
 
-	return value.Value().(string), nil
+	return value.Value(), nil
 }

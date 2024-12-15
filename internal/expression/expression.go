@@ -9,7 +9,7 @@ import (
 
 type Expression interface {
 	Source() string
-	Evaluate(map[string]any) (string, error)
+	Evaluate(map[string]any) (any, error)
 	Dependencies() []string
 }
 
@@ -47,7 +47,7 @@ func (e SimpleExpression) Source() string {
 	return string(e)
 }
 
-func (e SimpleExpression) Evaluate(map[string]any) (string, error) {
+func (e SimpleExpression) Evaluate(map[string]any) (any, error) {
 	return e.Source(), nil
 }
 
@@ -73,7 +73,7 @@ func (e CompositeExpression) Source() string {
 	return e.source
 }
 
-func (e CompositeExpression) Evaluate(variables map[string]any) (string, error) {
+func (e CompositeExpression) Evaluate(variables map[string]any) (any, error) {
 	s := e.source
 	for _, celExpression := range e.celExpressions {
 		r, err := celExpression.Evaluate(variables)
@@ -81,7 +81,7 @@ func (e CompositeExpression) Evaluate(variables map[string]any) (string, error) 
 			return "", err
 		}
 		fragment := cel.StartToken + celExpression.Source() + cel.EndToken
-		s = strings.Replace(s, fragment, r, -1)
+		s = strings.Replace(s, fragment, fmt.Sprintf("%s", r), -1)
 	}
 	return s, nil
 }
