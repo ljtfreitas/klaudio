@@ -20,13 +20,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -37,9 +40,33 @@ import (
 	resourcesv1alpha1 "github.com/nubank/klaudio/api/v1alpha1"
 )
 
+type ProvisionerStatusStateDescription string
+
+const (
+	ProvisionerStatusRunningState = ProvisionerStatusStateDescription("Running")
+	ProvisionerStatusFailedState  = ProvisionerStatusStateDescription("Failed")
+	ProvisionerStatusSuccessState = ProvisionerStatusStateDescription("Success")
+)
+
+type ProvisionerStatus struct {
+	Resource *ProvisionerStatusResource
+	State    ProvisionerStatusStateDescription
+	Outputs  map[string]any
+}
+
+type ProvisionerStatusResource struct {
+	schema.GroupVersionResource
+	Kind string
+}
+
+func (p *ProvisionerStatus) IsRunning() bool {
+	return p.State == ProvisionerStatusRunningState
+}
+
 // ResourceReconciler reconciles a Resource object
 type ResourceReconciler struct {
 	client.Client
+	dynamic.DynamicClient
 	Scheme *runtime.Scheme
 }
 
@@ -86,103 +113,211 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, resource *resourcesv
 
 	switch provisioner.Name {
 	case resourcesv1alpha1.ResourceRefPulumiProvisioner:
-		if err := r.runResourceProvisioner(ctx, resource); err != nil {
+		logWithResource.Info("Running Pulumi provisioner...")
+
+		provisionerStatus, err := r.runPulumiProvisioner(ctx, resource)
+		if err != nil {
 			logWithResource.Error(err, "failed to run Pulumi provisioner")
-			return ctrl.Result{Requeue: false}, nil
+			return ctrl.Result{Requeue: false}, err
 		}
+
+		if provisionerStatus.IsRunning() {
+			return ctrl.Result{RequeueAfter: time.Duration(5) * time.Second}, nil
+		}
+
+		var condition *metav1.Condition
+		switch provisionerStatus.State {
+		case ProvisionerStatusRunningState:
+			resource.Status.Phase = resourcesv1alpha1.ResourceDeployingStatusPhase
+			condition = &metav1.Condition{
+				Type:    resourcesv1alpha1.ResourceConditionReady,
+				Status:  metav1.ConditionUnknown,
+				Reason:  resourcesv1alpha1.ResourceConditionReasonDeploymentInProgress,
+				Message: fmt.Sprintf("Deployment from Resource %s is running...", resource.Name),
+			}
+		case ProvisionerStatusSuccessState:
+			resource.Status.Phase = resourcesv1alpha1.ResourceDoneStatusPhase
+			condition = &metav1.Condition{
+				Type:    resourcesv1alpha1.ResourceConditionReady,
+				Status:  metav1.ConditionTrue,
+				Reason:  resourcesv1alpha1.ResourceConditionReasonDeploymentDone,
+				Message: fmt.Sprintf("Deployment from Resource %s was successfully finished", resource.Name),
+			}
+		case ProvisionerStatusFailedState:
+			resource.Status.Phase = resourcesv1alpha1.ResourceFailedStatusPhase
+			condition = &metav1.Condition{
+				Type:    resourcesv1alpha1.ResourceConditionReady,
+				Status:  metav1.ConditionFalse,
+				Reason:  resourcesv1alpha1.ResourceConditionReasonDeploymentFailed,
+				Message: fmt.Sprintf("Deployment from Resource %s failed", resource.Name),
+			}
+		}
+
+		if provisionerStatus.Resource != nil {
+			resource.Status.Provisioner = resourcesv1alpha1.ResourceStatusProvisioner{
+				State: string(provisionerStatus.State),
+				Resource: resourcesv1alpha1.ResourceStatusProvisionerResource{
+					Group:   provisionerStatus.Resource.Group,
+					Version: provisionerStatus.Resource.Version,
+					Kind:    provisionerStatus.Resource.Kind,
+					Name:    provisionerStatus.Resource.Resource,
+				},
+			}
+		}
+		if provisionerStatus.Outputs != nil {
+			outputAsJson, err := json.Marshal(provisionerStatus.Outputs)
+			if err != nil {
+				logWithResource.Error(err, "failed to unmarshall Pulumi stack outputs")
+				return ctrl.Result{Requeue: false}, err
+			}
+			resource.Status.Outputs = &runtime.RawExtension{Raw: outputAsJson}
+		}
+
+		_, err = r.newResourceCondition(ctx, resource, condition)
+		if err != nil {
+			logWithResource.Error(err, "Failed to update Resource's status")
+			return ctrl.Result{}, err
+		}
+
 	default:
 		logWithResource.Error(fmt.Errorf("unsupported ResourceRef provisioner: %s", provisioner.Name), fmt.Sprintf("unsupported ResourceRef provisioner: %s", provisioner.Name))
 		return ctrl.Result{Requeue: false}, nil
 	}
 
-	resource.Status.Phase = resourcesv1alpha1.ResourceDoneStatusPhase
-	_, err := r.newResourceCondition(ctx, resource, &metav1.Condition{
-		Type:    resourcesv1alpha1.ResourceConditionReady,
-		Status:  metav1.ConditionTrue,
-		Reason:  resourcesv1alpha1.ResourceConditionReasonDeploymentDone,
-		Message: fmt.Sprintf("Deployment done Resource %s", resource.Name),
-	})
-	if err != nil {
-		logWithResource.Error(err, "Failed to update Resource's status")
-		return ctrl.Result{}, err
-	}
-
 	return ctrl.Result{}, nil
 }
 
-func (r *ResourceReconciler) runResourceProvisioner(ctx context.Context, resource *resourcesv1alpha1.Resource) error {
-	unstructured := unstructured.Unstructured{}
+func (r *ResourceReconciler) runPulumiProvisioner(ctx context.Context, resource *resourcesv1alpha1.Resource) (*ProvisionerStatus, error) {
+	stackObjectName := fmt.Sprintf("%s.%s", resource.Spec.Placement, resource.Name)
 
-	asJson := fmt.Sprintf(`{
-		"apiVersion": "pulumi.com/v1",
-		"kind": "Stack",
-		"metadata": {
-  			"name": "%s",
-			"namespace": "%s"
-		},
-		"spec": {
-			"envRefs": {
-				"PULUMI_CONFIG_PASSPHRASE": {
-					"type": "Literal",
-					"literal": {
-						"value": ""
-					}
-				}
-			},
-			"gitAuth": {
-				"accessToken": {
-					"type": "Secret",
-					"secret": {
-						"name": "github-access-token",
-						"namespace": "default",
-						"key": "accessToken"
-					}
-				}
-			},
-			"stack": "%s",
-			"projectRepo": "https://github.com/ljtfreitas/pulumi-sample-project.git",
-			"branch": "main",
-			"repoDir": "just-a-pet"
-		}
-	}`, resource.Name, resource.Namespace, fmt.Sprintf("%s.%s", resource.Spec.Placement, resource.Name))
-
-	object := make(map[string]any)
-	if err := json.Unmarshal([]byte(asJson), &object); err != nil {
-		return err
-	}
-
-	unstructured.SetUnstructuredContent(object)
-	unstructured.SetGroupVersionKind(schema.GroupVersionKind{
+	stackGkv := schema.GroupVersionKind{
 		Group:   "pulumi.com",
 		Version: "v1",
 		Kind:    "Stack",
-	})
-	unstructured.SetLabels(map[string]string{
-		"name":      resource.Name,
-		"namespace": resource.Namespace,
-	})
+	}
 
-	gvk, err := apiutil.GVKForObject(resource, r.Scheme)
+	stackGkvWithResource := stackGkv.GroupVersion().WithResource(stackObjectName)
+
+	unstructuredObject, err := r.DynamicClient.
+		Resource(stackGkvWithResource).
+		Namespace(resource.Namespace).
+		Get(ctx, stackObjectName, metav1.GetOptions{}, "status")
 	if err != nil {
-		return err
+		if !apierrors.IsNotFound(err) {
+			return nil, err
+		}
+
+		unstructuredObject.SetGroupVersionKind(stackGkv)
+		asJson := fmt.Sprintf(`{
+			"apiVersion": "pulumi.com/v1",
+			"kind": "Stack",
+			"metadata": {
+				"name": "%s",
+				"namespace": "%s"
+			},
+			"spec": {
+				"envRefs": {
+					"PULUMI_CONFIG_PASSPHRASE": {
+						"type": "Literal",
+						"literal": {
+							"value": ""
+						}
+					}
+				},
+				"gitAuth": {
+					"accessToken": {
+						"type": "Secret",
+						"secret": {
+							"name": "github-access-token",
+							"namespace": "default",
+							"key": "accessToken"
+						}
+					}
+				},
+				"stack": "%s",
+				"projectRepo": "https://github.com/ljtfreitas/pulumi-sample-project.git",
+				"branch": "main",
+				"repoDir": "just-a-pet"
+			}
+		}`, resource.Name, resource.Namespace, fmt.Sprintf("%s.%s", resource.Spec.Placement, resource.Name))
+
+		object := make(map[string]any)
+		if err := json.Unmarshal([]byte(asJson), &object); err != nil {
+			return nil, err
+		}
+
+		unstructuredObject.SetUnstructuredContent(object)
+		unstructuredObject.SetGroupVersionKind(stackGkv)
+		unstructuredObject.SetLabels(map[string]string{
+			"name":      resource.Name,
+			"namespace": resource.Namespace,
+		})
+
+		resourceGkv, err := apiutil.GVKForObject(resource, r.Scheme)
+		if err != nil {
+			return nil, err
+		}
+
+		unstructuredObject.SetOwnerReferences([]metav1.OwnerReference{
+			{
+				APIVersion:         resourceGkv.GroupVersion().String(),
+				Kind:               resourceGkv.Kind,
+				Name:               resource.Name,
+				UID:                resource.UID,
+				BlockOwnerDeletion: ptr.To(true),
+				Controller:         ptr.To(true),
+			},
+		})
+
+		if err := r.Client.Create(ctx, unstructuredObject); err != nil {
+			return nil, err
+		}
 	}
 
-	unstructured.SetOwnerReferences([]metav1.OwnerReference{
-		{
-			APIVersion:         gvk.GroupVersion().String(),
-			Kind:               gvk.Kind,
-			Name:               resource.Name,
-			UID:                resource.UID,
-			BlockOwnerDeletion: ptr.To(true),
-			Controller:         ptr.To(true),
+	stackStatus, exists, err := unstructured.NestedMap(unstructuredObject.Object, "status", "outputs", "lastUpdate")
+	if err != nil {
+		return nil, err
+	}
+
+	if exists {
+		if lastUpdate, exists := stackStatus["lastUpdate"].(map[string]any); exists {
+			switch lastUpdate["state"] {
+
+			case "succeeded":
+				provisionerStatus := &ProvisionerStatus{
+					Resource: &ProvisionerStatusResource{
+						GroupVersionResource: stackGkvWithResource,
+						Kind:                 stackGkv.Kind,
+					},
+					State:   ProvisionerStatusSuccessState,
+					Outputs: stackStatus["outputs"].(map[string]any),
+				}
+				return provisionerStatus, nil
+
+			case "failed":
+				provisionerStatus := &ProvisionerStatus{
+					Resource: &ProvisionerStatusResource{
+						GroupVersionResource: stackGkvWithResource,
+						Kind:                 stackGkv.Kind,
+					},
+					State:   ProvisionerStatusFailedState,
+					Outputs: stackStatus["outputs"].(map[string]any),
+				}
+				return provisionerStatus, nil
+			}
+		}
+	}
+
+	provisionerStatus := &ProvisionerStatus{
+		Resource: &ProvisionerStatusResource{
+			GroupVersionResource: stackGkvWithResource,
+			Kind:                 stackGkv.Kind,
 		},
-	})
-
-	if err := r.Client.Create(ctx, &unstructured); err != nil {
-		return err
+		State:   ProvisionerStatusRunningState,
+		Outputs: make(map[string]any),
 	}
 
-	return nil
+	return provisionerStatus, nil
 }
 
 func (r *ResourceReconciler) newResourceCondition(ctx context.Context, resource *resourcesv1alpha1.Resource, newCondition *metav1.Condition) (*resourcesv1alpha1.Resource, error) {

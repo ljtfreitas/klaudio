@@ -38,6 +38,7 @@ type ResourceStatusDescription string
 
 const (
 	ResourceDeployingStatusPhase = ResourceStatusDescription("Deploying")
+	ResourceFailedStatusPhase    = ResourceStatusDescription("Failed")
 	ResourceDoneStatusPhase      = ResourceStatusDescription("Done")
 
 	ResourceConditionReady = "Ready"
@@ -48,13 +49,27 @@ const (
 	ResourceConditionReasonDeploymentFailed     = "DeploymentFailed"
 )
 
+type ResourceStatusProvisioner struct {
+	Resource ResourceStatusProvisionerResource `json:"resource,omitempty"`
+	State    string                            `json:"state,omitempty"`
+}
+
+type ResourceStatusProvisionerResource struct {
+	Group   string `json:"group,omitempty"`
+	Version string `json:"version,omitempty"`
+	Kind    string `json:"kind,omitempty"`
+	Name    string `json:"name,omitempty"`
+}
+
 // ResourceStatus defines the observed state of Resource
 type ResourceStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	Phase      ResourceStatusDescription `json:"phase,omitempty"`
-	Conditions []metav1.Condition        `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
+	Provisioner ResourceStatusProvisioner `json:"provisioner,omitempty"`
+	Outputs     *runtime.RawExtension     `json:"outputs,omitempty"`
+	Phase       ResourceStatusDescription `json:"phase,omitempty"`
+	Conditions  []metav1.Condition        `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
 }
 
 // +kubebuilder:object:root=true
