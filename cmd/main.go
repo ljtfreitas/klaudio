@@ -23,6 +23,7 @@ import (
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
+	"k8s.io/client-go/dynamic"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -167,9 +168,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	dynamiClient := dynamic.NewForConfigOrDie(mgr.GetConfig())
+
 	resourceReconciler := &controller.ResourceReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:        mgr.GetClient(),
+		DynamicClient: dynamiClient,
+		Scheme:        mgr.GetScheme(),
 	}
 	if err = resourceReconciler.SetupWithManager(mgr); err != nil {
 		log.Error(err, "unable to create controller", "controller", "Resource")

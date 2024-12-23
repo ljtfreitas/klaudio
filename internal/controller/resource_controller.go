@@ -55,8 +55,8 @@ type ProvisionerStatus struct {
 }
 
 type ProvisionerStatusResource struct {
-	schema.GroupVersionResource
-	Kind string
+	schema.GroupVersionKind
+	Name string
 }
 
 func (p *ProvisionerStatus) IsRunning() bool {
@@ -66,7 +66,7 @@ func (p *ProvisionerStatus) IsRunning() bool {
 // ResourceReconciler reconciles a Resource object
 type ResourceReconciler struct {
 	client.Client
-	dynamic.DynamicClient
+	*dynamic.DynamicClient
 	Scheme *runtime.Scheme
 }
 
@@ -121,6 +121,8 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, resource *resourcesv
 			return ctrl.Result{Requeue: false}, err
 		}
 
+		logWithResource.Info(fmt.Sprintf("Current state from Pulumi provisioning is %s", provisionerStatus.State))
+
 		if provisionerStatus.IsRunning() {
 			return ctrl.Result{RequeueAfter: time.Duration(5) * time.Second}, nil
 		}
@@ -160,7 +162,7 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, resource *resourcesv
 					Group:   provisionerStatus.Resource.Group,
 					Version: provisionerStatus.Resource.Version,
 					Kind:    provisionerStatus.Resource.Kind,
-					Name:    provisionerStatus.Resource.Resource,
+					Name:    provisionerStatus.Resource.Name,
 				},
 			}
 		}
@@ -188,26 +190,26 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, resource *resourcesv
 }
 
 func (r *ResourceReconciler) runPulumiProvisioner(ctx context.Context, resource *resourcesv1alpha1.Resource) (*ProvisionerStatus, error) {
-	stackObjectName := fmt.Sprintf("%s.%s", resource.Spec.Placement, resource.Name)
-
 	stackGkv := schema.GroupVersionKind{
 		Group:   "pulumi.com",
 		Version: "v1",
 		Kind:    "Stack",
 	}
 
-	stackGkvWithResource := stackGkv.GroupVersion().WithResource(stackObjectName)
+	stackGkvWithResource := stackGkv.GroupVersion().WithResource("stacks")
 
 	unstructuredObject, err := r.DynamicClient.
 		Resource(stackGkvWithResource).
 		Namespace(resource.Namespace).
-		Get(ctx, stackObjectName, metav1.GetOptions{}, "status")
+		Get(ctx, resource.Name, metav1.GetOptions{})
 	if err != nil {
 		if !apierrors.IsNotFound(err) {
 			return nil, err
 		}
 
+		unstructuredObject = &unstructured.Unstructured{}
 		unstructuredObject.SetGroupVersionKind(stackGkv)
+
 		asJson := fmt.Sprintf(`{
 			"apiVersion": "pulumi.com/v1",
 			"kind": "Stack",
@@ -247,17 +249,21 @@ func (r *ResourceReconciler) runPulumiProvisioner(ctx context.Context, resource 
 		}
 
 		unstructuredObject.SetUnstructuredContent(object)
-		unstructuredObject.SetGroupVersionKind(stackGkv)
-		unstructuredObject.SetLabels(map[string]string{
-			"name":      resource.Name,
-			"namespace": resource.Namespace,
-		})
 
 		resourceGkv, err := apiutil.GVKForObject(resource, r.Scheme)
 		if err != nil {
 			return nil, err
 		}
 
+		unstructuredObject.SetLabels(map[string]string{
+			"name":      resource.Name,
+			"namespace": resource.Namespace,
+			resourcesv1alpha1.Group + "/managedBy.group":   resourceGkv.Group,
+			resourcesv1alpha1.Group + "/managedBy.version": resourceGkv.Version,
+			resourcesv1alpha1.Group + "/managedBy.kind":    resourceGkv.Kind,
+			resourcesv1alpha1.Group + "/managedBy.name":    resource.Name,
+			resourcesv1alpha1.Group + "/placement":         resource.Spec.Placement,
+		})
 		unstructuredObject.SetOwnerReferences([]metav1.OwnerReference{
 			{
 				APIVersion:         resourceGkv.GroupVersion().String(),
@@ -274,9 +280,14 @@ func (r *ResourceReconciler) runPulumiProvisioner(ctx context.Context, resource 
 		}
 	}
 
-	stackStatus, exists, err := unstructured.NestedMap(unstructuredObject.Object, "status", "outputs", "lastUpdate")
+	stackStatus, exists, err := unstructured.NestedMap(unstructuredObject.Object, "status")
 	if err != nil {
 		return nil, err
+	}
+
+	provisionerResource := &ProvisionerStatusResource{
+		GroupVersionKind: stackGkv,
+		Name:             resource.Name,
 	}
 
 	if exists {
@@ -285,23 +296,17 @@ func (r *ResourceReconciler) runPulumiProvisioner(ctx context.Context, resource 
 
 			case "succeeded":
 				provisionerStatus := &ProvisionerStatus{
-					Resource: &ProvisionerStatusResource{
-						GroupVersionResource: stackGkvWithResource,
-						Kind:                 stackGkv.Kind,
-					},
-					State:   ProvisionerStatusSuccessState,
-					Outputs: stackStatus["outputs"].(map[string]any),
+					Resource: provisionerResource,
+					State:    ProvisionerStatusSuccessState,
+					Outputs:  stackStatus["outputs"].(map[string]any),
 				}
 				return provisionerStatus, nil
 
 			case "failed":
 				provisionerStatus := &ProvisionerStatus{
-					Resource: &ProvisionerStatusResource{
-						GroupVersionResource: stackGkvWithResource,
-						Kind:                 stackGkv.Kind,
-					},
-					State:   ProvisionerStatusFailedState,
-					Outputs: stackStatus["outputs"].(map[string]any),
+					Resource: provisionerResource,
+					State:    ProvisionerStatusFailedState,
+					Outputs:  stackStatus["outputs"].(map[string]any),
 				}
 				return provisionerStatus, nil
 			}
@@ -309,12 +314,9 @@ func (r *ResourceReconciler) runPulumiProvisioner(ctx context.Context, resource 
 	}
 
 	provisionerStatus := &ProvisionerStatus{
-		Resource: &ProvisionerStatusResource{
-			GroupVersionResource: stackGkvWithResource,
-			Kind:                 stackGkv.Kind,
-		},
-		State:   ProvisionerStatusRunningState,
-		Outputs: make(map[string]any),
+		Resource: provisionerResource,
+		State:    ProvisionerStatusRunningState,
+		Outputs:  make(map[string]any),
 	}
 
 	return provisionerStatus, nil

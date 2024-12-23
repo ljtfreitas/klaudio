@@ -240,8 +240,27 @@ spec:
                         - type
                         type: object
                       type: array
+                    outputs:
+                      type: object
+                      x-kubernetes-preserve-unknown-fields: true
                     phase:
                       type: string
+                    provisioner:
+                      properties:
+                        resource:
+                          properties:
+                            group:
+                              type: string
+                            kind:
+                              type: string
+                            name:
+                              type: string
+                            version:
+                              type: string
+                          type: object
+                        state:
+                          type: string
+                      type: object
                   type: object
                 type: object
             type: object

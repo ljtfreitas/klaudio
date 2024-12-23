@@ -14,4 +14,49 @@ spec:
     - name: a-real-resource-two
       resourceRef: an-infrastructure-resource
       properties:
-        name: ${resources["a-real-resource-one"].spec.properties.name}
+        name: ${resources["a-real-resource-one"].status.outputs.name}
+# --
+# apiVersion: resources.klaudio.nubank.io/v1alpha1
+# kind: ResourceGroupDeployment
+# metadata:
+#   labels:
+#     app.kubernetes.io/name: klaudio
+#     app.kubernetes.io/managed-by: kustomize
+#   name: a-real-infrastructure
+# spec:
+#   placement: account-1
+#   resources:
+#     - name: a-real-resource-one
+#       resourceRef: an-infrastructure-resource
+#       properties:
+#         name: just-a-name
+#     - name: a-real-resource-two
+#       resourceRef: an-infrastructure-resource
+#       properties:
+#         name: ${resources["a-real-resource-one"].status.outputs.name}
+# --
+# apiVersion: resources.klaudio.nubank.io/v1alpha1
+# kind: Resource
+# metadata:
+#   labels:
+#     app.kubernetes.io/name: klaudio
+#     app.kubernetes.io/managed-by: kustomize
+#   name: a-real-infrastructure
+# spec:
+#   name: a-real-resource-one
+#   resourceRef: an-infrastructure-resource
+#   properties:
+#     name: just-a-name
+# --
+# apiVersion: resources.klaudio.nubank.io/v1alpha1
+# kind: Resource
+# metadata:
+#   labels:
+#     app.kubernetes.io/name: klaudio
+#     app.kubernetes.io/managed-by: kustomize
+#   name: a-real-infrastructure
+# spec:
+#   name: a-real-resource-one
+#   resourceRef: an-infrastructure-resource
+#   properties:
+#     name: just-a-name

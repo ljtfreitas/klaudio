@@ -80,6 +80,19 @@ func (r *ResourcePropertiesArgs) WithResource(name string, resource *api.Resourc
 		}
 	}
 
+	if outputs := resource.Status.Outputs; outputs != nil {
+		allStatusOutputs := make(map[string]any)
+		if err := json.Unmarshal(outputs.Raw, &allStatusOutputs); err != nil {
+			return nil, err
+		}
+
+		if spec, isSafe := resourceAsMap["Status"].(map[string]any); isSafe {
+			if _, isSafe := spec["Outputs"]; isSafe {
+				resourceAsMap["Status"].(map[string]any)["Outputs"] = allStatusOutputs
+			}
+		}
+	}
+
 	resources[name] = resourceAsMap
 	r.all["resources"] = resources
 
