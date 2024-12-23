@@ -28,7 +28,7 @@ func Test_ResourcesWithoutDependencies(t *testing.T) {
 	propertiesAsBytes, err := json.Marshal(sourceProperties)
 	assert.NoError(t, err)
 
-	resource, err := resourceGroup.Add("my-resource", &runtime.RawExtension{Raw: propertiesAsBytes})
+	resource, err := resourceGroup.NewResource("my-resource", &runtime.RawExtension{Raw: propertiesAsBytes})
 	assert.NoError(t, err)
 
 	assert.Len(t, resourceGroup.all, 1)
@@ -121,7 +121,7 @@ func Test_ResourcesWithDependencies(t *testing.T) {
 	propertiesAsBytes, err := json.Marshal(sourceProperties)
 	assert.NoError(t, err)
 
-	resource, err := resourceGroup.Add("my-resource", &runtime.RawExtension{Raw: propertiesAsBytes})
+	resource, err := resourceGroup.NewResource("my-resource", &runtime.RawExtension{Raw: propertiesAsBytes})
 	assert.NoError(t, err)
 
 	assert.Len(t, resourceGroup.all, 1)
@@ -203,11 +203,11 @@ func Test_ResourcesMustBeUnique(t *testing.T) {
 
 	resourceGroup := NewResourceGroup()
 
-	resource, err := resourceGroup.Add("my-resource", nil)
+	resource, err := resourceGroup.NewResource("my-resource", nil)
 	assert.NoError(t, err)
 	assert.NotNil(t, resource)
 
-	_, err = resourceGroup.Add("my-resource", nil)
+	_, err = resourceGroup.NewResource("my-resource", nil)
 	assert.Error(t, err)
 }
 
@@ -215,7 +215,7 @@ func Test_ResourcesGraph(t *testing.T) {
 	resourceGroup := NewResourceGroup()
 
 	// no dependencies
-	_, err := resourceGroup.Add("resource-one", nil)
+	_, err := resourceGroup.NewResource("resource-one", nil)
 	assert.NoError(t, err)
 
 	sourcePropertiesFromResourceTwo := map[string]any{
@@ -226,7 +226,7 @@ func Test_ResourcesGraph(t *testing.T) {
 	assert.NoError(t, err)
 
 	// depends on resource-one
-	_, err = resourceGroup.Add("resource-two", &runtime.RawExtension{Raw: propertiesAsBytes})
+	_, err = resourceGroup.NewResource("resource-two", &runtime.RawExtension{Raw: propertiesAsBytes})
 	assert.NoError(t, err)
 
 	sourcePropertiesFromResourceThree := map[string]any{
@@ -237,7 +237,7 @@ func Test_ResourcesGraph(t *testing.T) {
 	assert.NoError(t, err)
 
 	// depends on resource-two
-	_, err = resourceGroup.Add("resource-three", &runtime.RawExtension{Raw: propertiesAsBytes})
+	_, err = resourceGroup.NewResource("resource-three", &runtime.RawExtension{Raw: propertiesAsBytes})
 	assert.NoError(t, err)
 
 	sourcePropertiesFromResourceFour := map[string]any{
@@ -248,11 +248,11 @@ func Test_ResourcesGraph(t *testing.T) {
 	assert.NoError(t, err)
 
 	// depends on resource-one
-	_, err = resourceGroup.Add("resource-four", &runtime.RawExtension{Raw: propertiesAsBytes})
+	_, err = resourceGroup.NewResource("resource-four", &runtime.RawExtension{Raw: propertiesAsBytes})
 	assert.NoError(t, err)
 
 	// no dependencies
-	_, err = resourceGroup.Add("resource-five", nil)
+	_, err = resourceGroup.NewResource("resource-five", nil)
 	assert.NoError(t, err)
 
 	dag, err := resourceGroup.Graph()

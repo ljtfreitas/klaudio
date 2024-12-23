@@ -53,19 +53,41 @@ func NewResourcePropertiesArgs(parameters map[string]any, refs *refs.References)
 	return &ResourcePropertiesArgs{all: variables}
 }
 
-func (r *ResourcePropertiesArgs) WithResource(name string, resource *api.Resource) *ResourcePropertiesArgs {
+func (r *ResourcePropertiesArgs) WithResource(name string, resource *api.Resource) (*ResourcePropertiesArgs, error) {
 	resources, ok := r.all["resources"].(map[string]any)
 	if !ok {
 		resources = make(map[string]any)
 	}
 
-	resources[name] = resource
+	resourceAsJson, err := json.Marshal(resource)
+	if err != nil {
+		return nil, err
+	}
+
+	resourceAsMap := make(map[string]any)
+	if err := json.Unmarshal(resourceAsJson, &resourceAsMap); err != nil {
+		return nil, err
+	}
+
+	allProperties := make(map[string]any)
+	if err := json.Unmarshal(resource.Spec.Properties.Raw, &allProperties); err != nil {
+		return nil, err
+	}
+
+	if spec, isSafe := resourceAsMap["Spec"].(map[string]any); isSafe {
+		if _, isSafe := spec["Properties"]; isSafe {
+			resourceAsMap["Spec"].(map[string]any)["Properties"] = allProperties
+		}
+	}
+
+	resources[name] = resourceAsMap
 	r.all["resources"] = resources
 
-	return r
+	return r, nil
 }
 
 type Resource struct {
+	Name         string
 	Ref          *api.ResourceRef
 	properties   *ResourceProperties
 	dependencies []string
@@ -205,7 +227,7 @@ func (r *ResourceGroup) NewResource(name string, properties *runtime.RawExtensio
 		return nil, fmt.Errorf("resource '%s' is duplicated; check the spec", name)
 	}
 
-	resource := &Resource{}
+	resource := &Resource{Name: name}
 	r.all[name] = resource
 
 	if properties != nil {

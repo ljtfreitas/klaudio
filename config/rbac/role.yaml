@@ -82,3 +82,29 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - resources.klaudio.nubank.io
+  resources:
+  - resources
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - resources.klaudio.nubank.io
+  resources:
+  - resources/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - resources.klaudio.nubank.io
+  resources:
+  - resources/status
+  verbs:
+  - get
+  - patch
+  - update

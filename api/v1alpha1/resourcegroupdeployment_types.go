@@ -35,10 +35,19 @@ type ResourceGroupDeploymentSpec struct {
 	Resources  []ResourceGroupElement `json:"resources,omitempty"`
 }
 
-type ResourceGroupDeploymentStatusDescription string
+type ResourceGroupDeploymentResourcesStatuses map[string]ResourceStatus
+
+type ResourceGroupDeploymentStatusPhaseDescription string
 
 const (
-	DeploymentStarted = ResourceGroupDeploymentStatusDescription("Started")
+	DeploymentRunningPhase = ResourceGroupDeploymentStatusPhaseDescription("Running")
+	DeploymentDonePhase    = ResourceGroupDeploymentStatusPhaseDescription("Done")
+
+	DeploymentReadyCondition                        = "Ready"
+	DeploymentConditionReasonReconciling            = "Reconciling"
+	DeploymentConditionReasonResourceCreationFailed = "ResourceCreationFailed"
+	DeploymentConditionReasonDeploymentInProgress   = "DeploymentInProgress"
+	DeploymentConditionReasonDeploymentDone         = "DeploymentDone"
 )
 
 // ResourceGroupDeploymentStatus defines the observed state of ResourceGroupDeployment
@@ -46,11 +55,15 @@ type ResourceGroupDeploymentStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	Status ResourceGroupDeploymentStatusDescription `json:"status"`
+	Resources  ResourceGroupDeploymentResourcesStatuses      `json:"resources,omitempty"`
+	Phase      ResourceGroupDeploymentStatusPhaseDescription `json:"phase,omitempty"`
+	Conditions []metav1.Condition                            `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
+// +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 
 // ResourceGroupDeployment is the Schema for the resourcegroupdeployments API
 type ResourceGroupDeployment struct {

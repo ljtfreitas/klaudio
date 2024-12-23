@@ -22,9 +22,12 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -55,9 +58,23 @@ type ResourceGroupReconciler struct {
 func (r *ResourceGroupReconciler) Reconcile(ctx context.Context, resourceGroup *resourcesv1alpha1.ResourceGroup) (ctrl.Result, error) {
 	log := log.FromContext(ctx).WithValues("resourceGroup", resourceGroup.Name)
 
+	if len(resourceGroup.Status.Conditions) == 0 {
+		resourceGroupWithCondition, err := r.newResourceGroupCondition(ctx, resourceGroup, &metav1.Condition{
+			Type:    resourcesv1alpha1.ResourceGroupConditionReady,
+			Status:  metav1.ConditionUnknown,
+			Reason:  resourcesv1alpha1.ResourceGroupConditionReasonReconciling,
+			Message: fmt.Sprintf("Starting reconciliation from ResourceGroup %s", resourceGroup.Name),
+		})
+		if err != nil {
+			log.Error(err, "Failed to update ResourceGroup status")
+			return ctrl.Result{}, err
+		}
+		resourceGroup = resourceGroupWithCondition
+	}
+
 	// step 1: generate a dedicated namespace to resource group
 	namespace := &corev1.Namespace{}
-	if err := r.Client.Get(ctx, types.NamespacedName{Name: resourceGroup.Name}, namespace); err != nil {
+	if err := r.Get(ctx, types.NamespacedName{Name: resourceGroup.Name}, namespace); err != nil {
 		if !apierrors.IsNotFound(err) {
 			log.Error(err, "unable to fetch ResourceGroup's namespace")
 			return ctrl.Result{}, err
@@ -77,27 +94,37 @@ func (r *ResourceGroupReconciler) Reconcile(ctx context.Context, resourceGroup *
 			return ctrl.Result{}, err
 		}
 
-		if err := r.Client.Create(ctx, namespace); err != nil {
+		if err := r.Create(ctx, namespace); err != nil {
 			log.Error(err, fmt.Sprintf("unable to create namespace %s", namespace.Name), "namespace", namespace.Name)
-			return ctrl.Result{}, err
+
+			_, err = r.newResourceGroupCondition(ctx, resourceGroup, &metav1.Condition{
+				Type:    resourcesv1alpha1.ResourceGroupConditionReady,
+				Status:  metav1.ConditionFalse,
+				Reason:  resourcesv1alpha1.ResourceGroupConditionReasonNamespaceCreationFailed,
+				Message: fmt.Sprintf("Unable to create a namespace to ResourceGroup %s", resourceGroup.Name),
+			})
+			if err != nil {
+				log.Error(err, "failed to update ResourceGroup's status")
+				return ctrl.Result{}, err
+			}
+
+			return ctrl.Result{Requeue: false}, err
 		}
 
 		log.Info(fmt.Sprintf("a namespace was created to ResourceGroup %s", resourceGroup.Name))
 	}
 
-	log = log.WithValues("resourceGroupNamespace", namespace.Name)
+	namespacedLog := log.WithValues("resourceGroupNamespace", namespace.Name)
 
 	knowPlacements := sets.NewString()
 
 	// step 1: traverse all resources and collect deployment placements
 	for _, resource := range resourceGroup.Spec.Resources {
-		l := log.WithValues("resource", resource.Name)
-
 		// every resource must reference a ResourceRef object
 		resourceRef := &resourcesv1alpha1.ResourceRef{}
-		if err := r.Client.Get(ctx, types.NamespacedName{Name: resource.ResourceRef}, resourceRef); err != nil {
-			l.Error(err, "unable to fetch ResourceRef", "resourceRef", resource.Name)
-			return ctrl.Result{}, err
+		if err := r.Get(ctx, types.NamespacedName{Name: resource.ResourceRef}, resourceRef); err != nil {
+			namespacedLog.Error(err, "unable to fetch ResourceRef", "resourceRef", resource.ResourceRef)
+			return ctrl.Result{Requeue: false}, nil
 		}
 
 		knowPlacements = knowPlacements.Insert(resourceRef.Status.Placements...)
@@ -109,13 +136,13 @@ func (r *ResourceGroupReconciler) Reconcile(ctx context.Context, resourceGroup *
 	for _, placement := range knowPlacements.List() {
 		resourceGroupDeployment := &resourcesv1alpha1.ResourceGroupDeployment{}
 
-		l := log.WithValues("deployment", placement, "placement", placement)
+		deploymentLog := namespacedLog.WithValues("deployment", placement, "placement", placement)
 
 		deploymentName := fmt.Sprintf("%s.%s", resourceGroup.Name, placement)
 
-		if err := r.Client.Get(ctx, types.NamespacedName{Name: deploymentName, Namespace: namespace.Name}, resourceGroupDeployment); err != nil {
+		if err := r.Get(ctx, types.NamespacedName{Name: deploymentName, Namespace: namespace.Name}, resourceGroupDeployment); err != nil {
 			if !apierrors.IsNotFound(err) {
-				l.Error(err, "unable to fetch ResourceGroupDeployment")
+				deploymentLog.Error(err, "unable to fetch ResourceGroupDeployment")
 				return ctrl.Result{}, err
 			}
 
@@ -129,38 +156,89 @@ func (r *ResourceGroupReconciler) Reconcile(ctx context.Context, resourceGroup *
 				resourcesv1alpha1.Group + "/placement":         placement,
 			}
 			resourceGroupDeployment.Namespace = namespace.Name
-			resourceGroupDeployment.Spec = resourcesv1alpha1.ResourceGroupDeploymentSpec{
-				Placement: placement,
-				Resources: resourceGroup.Spec.Resources,
-			}
-			resourceGroupDeployment.Status = resourcesv1alpha1.ResourceGroupDeploymentStatus{
-				Status: resourcesv1alpha1.DeploymentStarted,
-			}
+			resourceGroupDeployment.Spec.Placement = placement
+			resourceGroupDeployment.Spec.Resources = resourceGroup.Spec.Resources
 
 			if err := ctrl.SetControllerReference(resourceGroup, resourceGroupDeployment, r.Scheme); err != nil {
-				l.Error(err, "unable to set ResourceGroupDeployment's ownerReference")
+				deploymentLog.Error(err, "unable to set ResourceGroupDeployment's ownerReference")
 				return ctrl.Result{}, err
 			}
 
-			if err := r.Client.Create(ctx, resourceGroupDeployment); err != nil {
-				l.Error(err, fmt.Sprintf("unable to create namespace %s", namespace.Name), "namespace", namespace.Name)
+			if err := r.Create(ctx, resourceGroupDeployment); err != nil {
+				deploymentLog.Error(err, fmt.Sprintf("unable to create ResourceGroupDeployment %s", resourceGroupDeployment.Name))
 				return ctrl.Result{}, err
 			}
 
-			l.Info(fmt.Sprintf("ResourceGroupDeployment to placement %s was created", placement))
+			deploymentLog.Info(fmt.Sprintf("ResourceGroupDeployment to placement %s was created", placement))
+
+			resourceGroupDeployment.Status.Phase = resourcesv1alpha1.DeploymentRunningPhase
+
+		} else {
+			err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+				if err = r.Get(ctx, types.NamespacedName{Name: deploymentName, Namespace: namespace.Name}, resourceGroupDeployment); err != nil {
+					return err
+				}
+				resourceGroupDeployment.Spec.Placement = placement
+				resourceGroupDeployment.Spec.Resources = resourceGroup.Spec.Resources
+				return r.Update(ctx, resourceGroupDeployment)
+			})
+			if err != nil {
+				deploymentLog.Error(err, fmt.Sprintf("unable to update ResourceGroupDeployment %s", resourceGroupDeployment.Name))
+				return ctrl.Result{}, err
+			}
 		}
 
 		knowDeployments[resourceGroupDeployment.Name] = resourceGroupDeployment.Status
 	}
 
-	resourceGroup.Status.Deployments = knowDeployments
-	resourceGroup.Status.Status = resourcesv1alpha1.ResourceGroupDeploymentInProgress
-	if err := r.Status().Update(ctx, resourceGroup); err != nil {
-		log.Error(err, "unable to update ResourceGroups's status")
+	currentGroupPhase := resourcesv1alpha1.ResourceGroupDeploymentDonePhase
+	for _, knowDeployment := range knowDeployments {
+		if knowDeployment.Phase == resourcesv1alpha1.DeploymentRunningPhase {
+			currentGroupPhase = resourcesv1alpha1.ResourceGroupDeploymentInProgressPhase
+			break
+		}
+	}
+
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		// refresh ResourceGroup
+		if err := r.Get(ctx, types.NamespacedName{Name: resourceGroup.Name}, resourceGroup); err != nil {
+			log.Error(err, "unable to refresh ResourceGroup")
+			return err
+		}
+		resourceGroup.Status.Deployments = knowDeployments
+		resourceGroup.Status.Phase = currentGroupPhase
+
+		reason := resourcesv1alpha1.ResourceGroupConditionReasonDeploymentInProgress
+		if currentGroupPhase == resourcesv1alpha1.ResourceGroupDeploymentDonePhase {
+			reason = resourcesv1alpha1.ResourceGroupConditionReasonDeploymentDone
+		}
+
+		_, err := r.newResourceGroupCondition(ctx, resourceGroup, &metav1.Condition{
+			Type:    resourcesv1alpha1.ResourceGroupConditionReady,
+			Status:  metav1.ConditionTrue,
+			Reason:  reason,
+			Message: fmt.Sprintf("All deployments from ResourceGroup %s were successfully scheduled", resourceGroup.Name),
+		})
+
+		return err
+	})
+	if err != nil {
+		namespacedLog.Error(err, "unable to update ResourceGroups's status")
 		return ctrl.Result{}, err
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func (r *ResourceGroupReconciler) newResourceGroupCondition(ctx context.Context, resourceGroup *resourcesv1alpha1.ResourceGroup, newCondition *metav1.Condition) (*resourcesv1alpha1.ResourceGroup, error) {
+	meta.SetStatusCondition(&resourceGroup.Status.Conditions, *newCondition)
+	if err := r.Status().Update(ctx, resourceGroup); err != nil {
+		return nil, err
+	}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: resourceGroup.Namespace, Name: resourceGroup.Name}, resourceGroup); err != nil {
+		return nil, err
+	}
+	return resourceGroup, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

@@ -4,17 +4,14 @@ metadata:
   labels:
     app.kubernetes.io/name: klaudio
     app.kubernetes.io/managed-by: kustomize
-  name: sample
+  name: a-real-infrastructure
 spec:
   resources:
-    - name: sample
-      resourceRef: sample
+    - name: a-real-resource-one
+      resourceRef: an-infrastructure-resource
       properties:
-        name: whatever
-    - name: sample2
-      resourceRef: sample
+        name: just-a-name
+    - name: a-real-resource-two
+      resourceRef: an-infrastructure-resource
       properties:
-        name: ${resources.sample.status.whatever}
-        another:
-          complex:
-            field: ${resources.sample.status.whatever}
+        name: ${resources["a-real-resource-one"].spec.properties.name}

@@ -37,8 +37,15 @@ type ResourceSpec struct {
 type ResourceStatusDescription string
 
 const (
-	ResourceStatusDeploying = "Deploying"
-	ResourceStatusDone      = "Done"
+	ResourceDeployingStatusPhase = ResourceStatusDescription("Deploying")
+	ResourceDoneStatusPhase      = ResourceStatusDescription("Done")
+
+	ResourceConditionReady = "Ready"
+
+	ResourceConditionReasonReconciling          = "Reconciling"
+	ResourceConditionReasonDeploymentInProgress = "DeploymentInProgress"
+	ResourceConditionReasonDeploymentDone       = "DeploymentDone"
+	ResourceConditionReasonDeploymentFailed     = "DeploymentFailed"
 )
 
 // ResourceStatus defines the observed state of Resource
@@ -46,11 +53,13 @@ type ResourceStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	Status ResourceStatusDescription `json:"status"`
+	Phase      ResourceStatusDescription `json:"phase,omitempty"`
+	Conditions []metav1.Condition        `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 
 // Resource is the Schema for the resources API
 type Resource struct {

@@ -53,7 +53,8 @@ type ResourceRefReconciler struct {
 func (r *ResourceRefReconciler) Reconcile(ctx context.Context, resourceRef *resourcesv1alpha1.ResourceRef) (ctrl.Result, error) {
 	log := log.FromContext(ctx).WithValues("resourceRef", resourceRef.Name)
 
-	resourceRef.Status.Placements = []string{"sample"}
+	resourceRef.Status.Status = resourcesv1alpha1.ResourceRefStatusDescriptionReady
+	resourceRef.Status.Placements = []string{"account-1", "account-2", "account-3"}
 	if err := r.Status().Update(ctx, resourceRef); err != nil {
 		log.Error(err, "unable to update ResourceRef's status")
 		return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -70,5 +71,5 @@ func (r *ResourceRefReconciler) Reconcile(ctx context.Context, resourceRef *reso
 func (r *ResourceRefReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&resourcesv1alpha1.ResourceRef{}).
-		Complete(reconcile.AsReconciler[*resourcesv1alpha1.ResourceRef](mgr.GetClient(), r))
+		Complete(reconcile.AsReconciler(mgr.GetClient(), r))
 }

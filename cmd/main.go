@@ -157,6 +157,7 @@ func main() {
 		log.Error(err, "unable to create controller", "controller", "ResourceGroup")
 		os.Exit(1)
 	}
+
 	resourceGroupDeploymentReconciler := &controller.ResourceGroupDeploymentReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
@@ -165,11 +166,13 @@ func main() {
 		log.Error(err, "unable to create controller", "controller", "ResourceGroupDeployment")
 		os.Exit(1)
 	}
-	if err = (&controller.ResourceReconciler{
+
+	resourceReconciler := &controller.ResourceReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Resource")
+	}
+	if err = resourceReconciler.SetupWithManager(mgr); err != nil {
+		log.Error(err, "unable to create controller", "controller", "Resource")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

@@ -14,7 +14,7 @@ func Test_Expression(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, `"sample"`, expression.Source())
 
-		r, err := expression.Evaluate(NoArgs())
+		r, err := expression.Evaluate()
 
 		assert.NoError(t, err)
 		assert.Equal(t, "sample", r)
@@ -40,25 +40,57 @@ func Test_Expression(t *testing.T) {
 	})
 
 	t.Run("We should be able to eval an object expression", func(t *testing.T) {
-		expression, err := Parse("${i.am.an.object}")
 
-		assert.NoError(t, err)
-		assert.Equal(t, "i.am.an.object", expression.Source())
+		t.Run("We can use a map as dependency", func(t *testing.T) {
+			expression, err := Parse("${i.am.an.object}")
 
-		variables := map[string]any{
-			"i": map[string]any{
-				"am": map[string]any{
-					"an": map[string]any{
-						"object": "i am an object!",
+			assert.NoError(t, err)
+			assert.Equal(t, "i.am.an.object", expression.Source())
+
+			variables := map[string]any{
+				"i": map[string]any{
+					"am": map[string]any{
+						"an": map[string]any{
+							"object": "i am an object!",
+						},
 					},
 				},
-			},
-		}
+			}
 
-		r, err := expression.Evaluate(variables)
+			r, err := expression.Evaluate(variables)
 
-		assert.NoError(t, err)
-		assert.Equal(t, "i am an object!", r)
+			assert.NoError(t, err)
+			assert.Equal(t, "i am an object!", r)
+		})
+
+		t.Run("We can use a struct as dependency", func(t *testing.T) {
+			expression, err := Parse("${i.am.an.object}")
+
+			assert.NoError(t, err)
+			assert.Equal(t, "i.am.an.object", expression.Source())
+
+			type object struct {
+				Object string `expr:"object"`
+			}
+
+			objectValue := object{
+				Object: "i am an object!",
+			}
+
+			variables := map[string]any{
+				"i": map[string]any{
+					"am": map[string]any{
+						"an": objectValue,
+					},
+				},
+			}
+
+			r, err := expression.Evaluate(variables)
+
+			assert.NoError(t, err)
+			assert.Equal(t, objectValue.Object, r)
+		})
+
 	})
 
 	t.Run("We should be able to eval a composite expression", func(t *testing.T) {
@@ -67,7 +99,7 @@ func Test_Expression(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, `hello ${"world"}!`, expression.Source())
 
-		r, err := expression.Evaluate(NoArgs())
+		r, err := expression.Evaluate()
 
 		assert.NoError(t, err)
 		assert.Equal(t, "hello world!", r)
@@ -78,7 +110,7 @@ func Test_Expression(t *testing.T) {
 			assert.NoError(t, err)
 			assert.Equal(t, `${"hello"}, ${"world"}!`, expression.Source())
 
-			r, err := expression.Evaluate(NoArgs())
+			r, err := expression.Evaluate()
 
 			assert.NoError(t, err)
 			assert.Equal(t, "hello, world!", r)

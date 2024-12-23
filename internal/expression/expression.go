@@ -4,12 +4,17 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nubank/klaudio/internal/expression/cel"
+	"github.com/nubank/klaudio/internal/expression/expr"
+)
+
+const (
+	StartToken = "${"
+	EndToken   = "}"
 )
 
 type Expression interface {
 	Source() string
-	Evaluate(map[string]any) (any, error)
+	Evaluate(args ...map[string]any) (any, error)
 	Dependencies() []string
 }
 
@@ -19,22 +24,18 @@ func Parse(expression any) (Expression, error) {
 		return SimpleExpression(fmt.Sprintf("%s", expression)), nil
 	}
 
-	celExpressions := cel.SearchExpressions(expressionAsString)
+	expressions := expr.SearchExpressions(expressionAsString)
 
-	if len(celExpressions) == 0 {
+	if len(expressions) == 0 {
 		return SimpleExpression(expressionAsString), nil
 	}
 
-	if len(celExpressions) == 1 && strings.HasPrefix(expressionAsString, cel.StartToken) {
-		return cel.NewCelExpression(expressionAsString)
+	if len(expressions) == 1 && strings.HasPrefix(expressionAsString, StartToken) {
+		return expr.NewExprExpression(expressionAsString)
 	}
 
-	return newCompositeExpression(expressionAsString, celExpressions)
+	return newCompositeExpression(expressionAsString, expressions)
 
-}
-
-func NoArgs() map[string]any {
-	return make(map[string]any)
 }
 
 func noDependencies() []string {
@@ -47,7 +48,7 @@ func (e SimpleExpression) Source() string {
 	return string(e)
 }
 
-func (e SimpleExpression) Evaluate(map[string]any) (any, error) {
+func (e SimpleExpression) Evaluate(args ...map[string]any) (any, error) {
 	return e.Source(), nil
 }
 
@@ -56,40 +57,40 @@ func (e SimpleExpression) Dependencies() []string {
 }
 
 type CompositeExpression struct {
-	source         string
-	celExpressions []cel.CelExpression
+	source      string
+	expressions []Expression
 }
 
-func newCompositeExpression(expression string, celExpressions []string) (CompositeExpression, error) {
-	expressions := make([]cel.CelExpression, 0)
-	for _, celExpression := range celExpressions {
-		expressions = append(expressions, cel.CelExpression(celExpression))
+func newCompositeExpression(expression string, expressions []string) (CompositeExpression, error) {
+	checkedExpressions := make([]Expression, 0)
+	for _, e := range expressions {
+		checkedExpressions = append(checkedExpressions, expr.ExprExpression(e))
 	}
 
-	return CompositeExpression{source: expression, celExpressions: expressions}, nil
+	return CompositeExpression{source: expression, expressions: checkedExpressions}, nil
 }
 
 func (e CompositeExpression) Source() string {
 	return e.source
 }
 
-func (e CompositeExpression) Evaluate(variables map[string]any) (any, error) {
+func (e CompositeExpression) Evaluate(args ...map[string]any) (any, error) {
 	s := e.source
-	for _, celExpression := range e.celExpressions {
-		r, err := celExpression.Evaluate(variables)
+	for _, expression := range e.expressions {
+		r, err := expression.Evaluate(args...)
 		if err != nil {
 			return "", err
 		}
-		fragment := cel.StartToken + celExpression.Source() + cel.EndToken
+		fragment := StartToken + expression.Source() + EndToken
 		s = strings.Replace(s, fragment, fmt.Sprintf("%s", r), -1)
 	}
 	return s, nil
 }
 
 func (e CompositeExpression) Dependencies() []string {
-	dependencies := make([]string, len(e.celExpressions))
-	for _, celExpression := range e.celExpressions {
-		dependencies = append(dependencies, celExpression.Dependencies()...)
+	dependencies := make([]string, len(e.expressions))
+	for _, expression := range e.expressions {
+		dependencies = append(dependencies, expression.Dependencies()...)
 	}
 	return dependencies
 }

@@ -55,10 +55,18 @@ type ResourceGroupElement struct {
 
 type ResourceGroupDeploymentStatuses map[string]ResourceGroupDeploymentStatus
 
-type ResourceGroupStatusDescription string
+type ResourceGroupStatusPhaseDescription string
 
-var (
-	ResourceGroupDeploymentInProgress = ResourceGroupStatusDescription("DeploymentInProgress")
+const (
+	ResourceGroupDeploymentInProgressPhase = ResourceGroupStatusPhaseDescription("DeploymentInProgress")
+	ResourceGroupDeploymentDonePhase       = ResourceGroupStatusPhaseDescription("DeploymentDone")
+
+	ResourceGroupConditionReady = "Ready"
+
+	ResourceGroupConditionReasonReconciling             = "Reconciling"
+	ResourceGroupConditionReasonDeploymentInProgress    = "DeploymentInProgress"
+	ResourceGroupConditionReasonDeploymentDone          = "DeploymentDone"
+	ResourceGroupConditionReasonNamespaceCreationFailed = "NamespaceCreationFailed"
 )
 
 // ResourceGroupStatus defines the observed state of ResourceGroup
@@ -66,8 +74,9 @@ type ResourceGroupStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	Deployments ResourceGroupDeploymentStatuses `json:"deployments"`
-	Status      ResourceGroupStatusDescription  `json:"status"`
+	Deployments ResourceGroupDeploymentStatuses     `json:"deployments,omitempty"`
+	Phase       ResourceGroupStatusPhaseDescription `json:"phase,omitempty"`
+	Conditions  []metav1.Condition                  `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
 }
 
 // +kubebuilder:object:root=true

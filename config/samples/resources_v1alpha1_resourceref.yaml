@@ -4,7 +4,19 @@ metadata:
   labels:
     app.kubernetes.io/name: klaudio
     app.kubernetes.io/managed-by: kustomize
-  name: sample
+  name: an-infrastructure-resource
 spec:
-  group: services-capabilities
-  kind: zookeeper
+  name: some-infrastructure-resource
+  kind: basic-infrastructure
+  provisioner:
+    name: pulumi
+    properties:
+      git:
+        repo: sample
+        branch: main
+  schema:
+    type: object
+    properties:
+      name:
+        type: string
+        description: just a name :)

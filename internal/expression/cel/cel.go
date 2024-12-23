@@ -9,11 +9,6 @@ import (
 	"github.com/google/cel-go/ext"
 )
 
-const (
-	StartToken = "${"
-	EndToken   = "}"
-)
-
 var (
 	celExpressionRe        = regexp.MustCompile(`\$\{([^}]+)\}`)
 	resourcesExpressionRe  = regexp.MustCompile(`(resources\.[^.]+)\.`)

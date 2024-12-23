@@ -1,0 +1,22 @@
+apiVersion: pulumi.com/v1
+kind: Stack
+metadata:
+  name: just-a-sample-stack
+  labels:
+    sample: sample5
+spec:
+  envRefs:
+    PULUMI_CONFIG_PASSPHRASE:
+      type: Literal
+      literal:
+        value: ""
+  gitAuth:
+    accessToken:
+      type: Secret
+      secret:
+        name: github-access-token
+        key: accessToken
+  stack: dev
+  projectRepo: https://github.com/ljtfreitas/pulumi-sample-project.git
+  branch: main
+  repoDir: just-a-pet

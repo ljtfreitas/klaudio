@@ -18,6 +18,7 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
@@ -28,21 +29,52 @@ type ResourceRefSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	Group string `json:"group"`
-	Kind  string `json:"kind"`
+	Name        string                 `json:"name"`
+	Kind        string                 `json:"kind"`
+	Provisioner ResourceRefProvisioner `json:"provisioner"`
+	Schema      ResourceRefSchema      `json:"schema"`
 }
+
+type ResourceRefProvisionerName string
+
+const (
+	ResourceRefPulumiProvisioner = "pulumi"
+)
+
+type ResourceRefProvisioner struct {
+	Name       ResourceRefProvisionerName `json:"name"`
+	Properties *runtime.RawExtension      `json:"properties,omitempty"`
+}
+
+type ResourceRefSchema struct {
+	Type        string `json:"type"`
+	Description string `json:"description,omitempty"`
+
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Schemaless
+	Properties map[string]ResourceRefSchema `json:"properties,omitempty"`
+}
+
+type ResourceRefStatusDescription string
+
+const (
+	ResourceRefStatusDescriptionReady = "Ready"
+)
 
 // ResourceRefStatus defines the observed state of ResourceRef
 type ResourceRefStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	Placements []string `json:"placements"`
+	Status     ResourceRefStatusDescription `json:"status"`
+	Placements []string                     `json:"placements"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
+// +kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.status`
 
 // ResourceRef is the Schema for the resourcerefs API
 type ResourceRef struct {
