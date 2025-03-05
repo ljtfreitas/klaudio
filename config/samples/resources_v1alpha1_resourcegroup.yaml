@@ -4,17 +4,13 @@ metadata:
   labels:
     app.kubernetes.io/name: klaudio
     app.kubernetes.io/managed-by: kustomize
-  name: a-real-infrastructure
+  name: a-real-resource-group
 spec:
   resources:
-    - name: a-real-resource-one
-      resourceRef: an-infrastructure-resource
+    - name: resource-one
+      resourceRef: resource-one-ref
       properties:
-        name: just-a-name
-    - name: a-real-resource-two
-      resourceRef: an-infrastructure-resource
-      properties:
-        name: ${resources["a-real-resource-one"].status.outputs.name}
+        name: "Tiago de Freitas Lima"
 # --
 # apiVersion: resources.klaudio.nubank.io/v1alpha1
 # kind: ResourceGroupDeployment

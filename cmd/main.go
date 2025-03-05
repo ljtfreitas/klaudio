@@ -179,6 +179,15 @@ func main() {
 		log.Error(err, "unable to create controller", "controller", "Resource")
 		os.Exit(1)
 	}
+
+	namespaceReconciler := &controller.NamespaceReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}
+	if err = namespaceReconciler.SetupWithManager(mgr); err != nil {
+		log.Error(err, "unable to create controller", "controller", "Namespace")
+		os.Exit(1)
+	}
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

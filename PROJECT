@@ -42,4 +42,9 @@ resources:
   kind: Resource
   path: github.com/nubank/klaudio/api/v1alpha1
   version: v1alpha1
+- controller: true
+  group: core
+  kind: Namespace
+  path: k8s.io/api/core/v1
+  version: v1
 version: "3"

@@ -3,20 +3,20 @@ kind: ResourceRef
 metadata:
   labels:
     app.kubernetes.io/name: klaudio
-    app.kubernetes.io/managed-by: kustomize
-  name: an-infrastructure-resource
+  name: resource-one-ref
 spec:
-  name: some-infrastructure-resource
+  name: resource-one-ref
   kind: basic-infrastructure
   provisioner:
-    name: pulumi
+    name: opentofu
     properties:
       git:
-        repo: sample
+        repo: https://github.com/ljtfreitas/opentofu-sample-project
         branch: main
+        dir: random/
   schema:
     type: object
     properties:
       name:
         type: string
-        description: just a name :)
+        description: just a variable called 'name' :)
