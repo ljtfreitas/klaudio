@@ -133,7 +133,7 @@ func (provisioner *OpenTofuProvisioner) Run(ctx context.Context, resource *resou
 		}
 	}
 
-	provisioner.log.Info(fmt.Sprintf("can´t determine the Terraform provisioning status for object %s yet; keep running...", terraform.GetName()))
+	provisioner.log.Info(fmt.Sprintf("can't determine the Terraform provisioning status for object %s yet; keep running...", terraform.GetName()))
 
 	resourceStatus := &ProvisionedResourceStatus{
 		Resource: provisionedResource,
@@ -152,7 +152,7 @@ func (provisioner *OpenTofuProvisioner) getOrNewRepo(ctx context.Context, resour
 		Kind:    "GitRepository",
 	}
 
-	repoGvWithResource := repoGvk.GroupVersion().WithResource("gitrepositories")
+	repoGvWithResource := repoGvk.GroupVersion().WithResource("gitrepo")
 
 	repo, err := provisioner.dynamicClient.
 		Resource(repoGvWithResource).
@@ -167,15 +167,14 @@ func (provisioner *OpenTofuProvisioner) getOrNewRepo(ctx context.Context, resour
 		repo = &unstructured.Unstructured{}
 		repo.SetGroupVersionKind(repoGvk)
 
-		object := make(map[string]any)
-
-		object["apiVersion"] = "source.toolkit.fluxcd.io/v1"
-		object["kind"] = "GitRepository"
-		object["metadata"] = map[string]any{
+		content := make(map[string]any)
+		content["apiVersion"] = "source.toolkit.fluxcd.io/v1"
+		content["kind"] = "GitRepository"
+		content["metadata"] = map[string]any{
 			"name":      resource.Spec.ResourceRef,
 			"namespace": resource.Namespace,
 		}
-		object["spec"] = map[string]any{
+		content["spec"] = map[string]any{
 			"interval": "60s",
 			"url":      provisioner.properties.Git.Repo,
 			"ref": map[string]any{
@@ -183,27 +182,32 @@ func (provisioner *OpenTofuProvisioner) getOrNewRepo(ctx context.Context, resour
 			},
 		}
 
-		repo.SetUnstructuredContent(object)
+		repo.SetUnstructuredContent(content)
 
-		resourceGkv, err := apiutil.GVKForObject(resource, provisioner.scheme)
-		if err != nil {
+		resourceRef := &resourcesv1alpha1.ResourceRef{}
+		if err := provisioner.client.Get(ctx, types.NamespacedName{Name: resource.Spec.ResourceRef}, resourceRef); err != nil {
+			provisioner.log.Error(err, fmt.Sprintf("unable to fetch ResourceRef %s", resource.Spec.ResourceRef))
 			return nil, err
 		}
+
+		resourceRefGvk := resourceRef.GroupVersionKind()
+
 		repo.SetLabels(map[string]string{
 			"name":      resource.Name,
 			"namespace": resource.Namespace,
-			resourcesv1alpha1.Group + "/managedBy.group":   resourceGkv.Group,
-			resourcesv1alpha1.Group + "/managedBy.version": resourceGkv.Version,
-			resourcesv1alpha1.Group + "/managedBy.kind":    "ResourceRef",
-			resourcesv1alpha1.Group + "/managedBy.name":    resource.Spec.ResourceRef,
+			resourcesv1alpha1.Group + "/managedBy.group":   resourceRefGvk.Group,
+			resourcesv1alpha1.Group + "/managedBy.version": resourceRefGvk.Version,
+			resourcesv1alpha1.Group + "/managedBy.kind":    resourceRefGvk.Kind,
+			resourcesv1alpha1.Group + "/managedBy.name":    resourceRef.Name,
 		})
 		repo.SetOwnerReferences([]metav1.OwnerReference{
 			{
-				APIVersion:         resourceGkv.GroupVersion().String(),
-				Kind:               "ResourceRef",
-				Name:               resource.Spec.ResourceRef,
-				BlockOwnerDeletion: ptr.To(true),
+				APIVersion:         resourceRefGvk.GroupVersion().String(),
+				Kind:               resourceRefGvk.Kind,
+				Name:               resourceRef.Name,
+				UID:                resourceRef.UID,
 				Controller:         ptr.To(true),
+				BlockOwnerDeletion: ptr.To(true),
 			},
 		})
 
@@ -222,7 +226,7 @@ func (provisioner *OpenTofuProvisioner) getOrNewTerraform(ctx context.Context, g
 		Kind:    "GitRepository",
 	}
 
-	terraformGvWithResource := terraformGvk.GroupVersion().WithResource("terraforms")
+	terraformGvWithResource := terraformGvk.GroupVersion().WithResource("terraform")
 
 	terraform, err := provisioner.dynamicClient.
 		Resource(terraformGvWithResource).

@@ -80,7 +80,7 @@ func (r *NamespaceReconciler) Reconcile(ctx context.Context, namespace *corev1.N
 			Name:     OpenTofuClusterRoleName,
 		}
 		openTofuRunnerRoleBinding.Subjects = []rbacv1.Subject{
-			rbacv1.Subject{
+			{
 				Kind:      "ServiceAccount",
 				Name:      OpenTofuServiceAccountName,
 				Namespace: namespace.Name,

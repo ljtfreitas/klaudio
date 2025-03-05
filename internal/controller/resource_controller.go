@@ -112,33 +112,9 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, resource *resourcesv
 		return ctrl.Result{RequeueAfter: time.Duration(5) * time.Second}, nil
 	}
 
-	var condition *metav1.Condition
-	switch status.State {
-	case provisioning.ProvisionedResourceRunningState:
-		resource.Status.Phase = resourcesv1alpha1.ResourceDeployingStatusPhase
-		condition = &metav1.Condition{
-			Type:    resourcesv1alpha1.ResourceConditionReady,
-			Status:  metav1.ConditionUnknown,
-			Reason:  resourcesv1alpha1.ResourceConditionReasonDeploymentInProgress,
-			Message: fmt.Sprintf("Deployment from Resource %s is running...", resource.Name),
-		}
-	case provisioning.ProvisionedResourceSuccessState:
-		resource.Status.Phase = resourcesv1alpha1.ResourceDoneStatusPhase
-		condition = &metav1.Condition{
-			Type:    resourcesv1alpha1.ResourceConditionReady,
-			Status:  metav1.ConditionTrue,
-			Reason:  resourcesv1alpha1.ResourceConditionReasonDeploymentDone,
-			Message: fmt.Sprintf("Deployment from Resource %s was successfully finished", resource.Name),
-		}
-	case provisioning.ProvisionedResourceFailedState:
-		resource.Status.Phase = resourcesv1alpha1.ResourceFailedStatusPhase
-		condition = &metav1.Condition{
-			Type:    resourcesv1alpha1.ResourceConditionReady,
-			Status:  metav1.ConditionFalse,
-			Reason:  resourcesv1alpha1.ResourceConditionReasonDeploymentFailed,
-			Message: fmt.Sprintf("Deployment from Resource %s failed", resource.Name),
-		}
-	}
+	phase, condition := statusToCondition(status, resource)
+
+	resource.Status.Phase = phase
 
 	if status.Resource != nil {
 		resource.Status.Provisioner = resourcesv1alpha1.ResourceStatusProvisioner{
@@ -167,6 +143,32 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, resource *resourcesv
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func statusToCondition(status *provisioning.ProvisionedResourceStatus, resource *resourcesv1alpha1.Resource) (resourcesv1alpha1.ResourceStatusDescription, *metav1.Condition) {
+	switch status.State {
+	case provisioning.ProvisionedResourceSuccessState:
+		return resourcesv1alpha1.ResourceDoneStatusPhase, &metav1.Condition{
+			Type:    resourcesv1alpha1.ResourceConditionReady,
+			Status:  metav1.ConditionTrue,
+			Reason:  resourcesv1alpha1.ResourceConditionReasonDeploymentDone,
+			Message: fmt.Sprintf("Deployment from Resource %s was successfully finished", resource.Name),
+		}
+	case provisioning.ProvisionedResourceFailedState:
+		return resourcesv1alpha1.ResourceFailedStatusPhase, &metav1.Condition{
+			Type:    resourcesv1alpha1.ResourceConditionReady,
+			Status:  metav1.ConditionFalse,
+			Reason:  resourcesv1alpha1.ResourceConditionReasonDeploymentFailed,
+			Message: fmt.Sprintf("Deployment from Resource %s failed", resource.Name),
+		}
+	default:
+		return resourcesv1alpha1.ResourceDeployingStatusPhase, &metav1.Condition{
+			Type:    resourcesv1alpha1.ResourceConditionReady,
+			Status:  metav1.ConditionUnknown,
+			Reason:  resourcesv1alpha1.ResourceConditionReasonDeploymentInProgress,
+			Message: fmt.Sprintf("Deployment from Resource %s is running...", resource.Name),
+		}
+	}
 }
 
 func (r *ResourceReconciler) newResourceCondition(ctx context.Context, resource *resourcesv1alpha1.Resource, newCondition *metav1.Condition) (*resourcesv1alpha1.Resource, error) {
