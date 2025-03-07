@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -60,9 +61,9 @@ func (r *ResourceGroupReconciler) Reconcile(ctx context.Context, resourceGroup *
 
 	if len(resourceGroup.Status.Conditions) == 0 {
 		resourceGroupWithCondition, err := r.newResourceGroupCondition(ctx, resourceGroup, &metav1.Condition{
-			Type:    resourcesv1alpha1.ResourceGroupConditionReady,
+			Type:    resourcesv1alpha1.ConditionTypeInitializing,
 			Status:  metav1.ConditionUnknown,
-			Reason:  resourcesv1alpha1.ResourceGroupConditionReasonReconciling,
+			Reason:  resourcesv1alpha1.ConditionReasonReconciling,
 			Message: fmt.Sprintf("Starting reconciliation from ResourceGroup %s", resourceGroup.Name),
 		})
 		if err != nil {
@@ -71,6 +72,8 @@ func (r *ResourceGroupReconciler) Reconcile(ctx context.Context, resourceGroup *
 		}
 		resourceGroup = resourceGroupWithCondition
 	}
+
+	log.Info(fmt.Sprintf("current status phase is %s", resourceGroup.Status.Phase))
 
 	// step 1: generate a dedicated namespace to resource group
 	namespace := &corev1.Namespace{}
@@ -98,9 +101,9 @@ func (r *ResourceGroupReconciler) Reconcile(ctx context.Context, resourceGroup *
 			log.Error(err, fmt.Sprintf("unable to create namespace %s", namespace.Name), "namespace", namespace.Name)
 
 			_, err = r.newResourceGroupCondition(ctx, resourceGroup, &metav1.Condition{
-				Type:    resourcesv1alpha1.ResourceGroupConditionReady,
+				Type:    resourcesv1alpha1.ConditionTypeFailed,
 				Status:  metav1.ConditionFalse,
-				Reason:  resourcesv1alpha1.ResourceGroupConditionReasonNamespaceCreationFailed,
+				Reason:  resourcesv1alpha1.ConditionReasonFailed,
 				Message: fmt.Sprintf("Unable to create a namespace to ResourceGroup %s", resourceGroup.Name),
 			})
 			if err != nil {
@@ -171,7 +174,7 @@ func (r *ResourceGroupReconciler) Reconcile(ctx context.Context, resourceGroup *
 
 			deploymentLog.Info(fmt.Sprintf("ResourceGroupDeployment to placement %s was created", placement))
 
-			resourceGroupDeployment.Status.Phase = resourcesv1alpha1.DeploymentRunningPhase
+			resourceGroupDeployment.Status.Phase = resourcesv1alpha1.DeploymentInProgressPhase
 
 		} else {
 			err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -191,13 +194,19 @@ func (r *ResourceGroupReconciler) Reconcile(ctx context.Context, resourceGroup *
 		knowDeployments[resourceGroupDeployment.Name] = resourceGroupDeployment.Status
 	}
 
-	currentGroupPhase := resourcesv1alpha1.ResourceGroupDeploymentDonePhase
+	currentGroupPhase := resourcesv1alpha1.DeploymentDonePhase
 	for _, knowDeployment := range knowDeployments {
-		if knowDeployment.Phase == resourcesv1alpha1.DeploymentRunningPhase {
-			currentGroupPhase = resourcesv1alpha1.ResourceGroupDeploymentInProgressPhase
+		if knowDeployment.Phase == resourcesv1alpha1.DeploymentFailedPhase {
+			currentGroupPhase = resourcesv1alpha1.DeploymentFailedPhase
+			break
+		}
+		if knowDeployment.Phase == resourcesv1alpha1.DeploymentInProgressPhase {
+			currentGroupPhase = resourcesv1alpha1.DeploymentInProgressPhase
 			break
 		}
 	}
+
+	log.Info(fmt.Sprintf("next status phase will be %s", currentGroupPhase))
 
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		// refresh ResourceGroup
@@ -206,15 +215,12 @@ func (r *ResourceGroupReconciler) Reconcile(ctx context.Context, resourceGroup *
 			return err
 		}
 		resourceGroup.Status.Deployments = knowDeployments
-		resourceGroup.Status.Phase = currentGroupPhase
+		resourceGroup.Status.Phase = resourcesv1alpha1.ResourceGroupStatusPhaseDescription(currentGroupPhase)
 
-		reason := resourcesv1alpha1.ResourceGroupConditionReasonDeploymentInProgress
-		if currentGroupPhase == resourcesv1alpha1.ResourceGroupDeploymentDonePhase {
-			reason = resourcesv1alpha1.ResourceGroupConditionReasonDeploymentDone
-		}
+		reason := resourcesv1alpha1.StatusPhaseToReason(currentGroupPhase)
 
 		_, err := r.newResourceGroupCondition(ctx, resourceGroup, &metav1.Condition{
-			Type:    resourcesv1alpha1.ResourceGroupConditionReady,
+			Type:    resourcesv1alpha1.ConditionTypeReady,
 			Status:  metav1.ConditionTrue,
 			Reason:  reason,
 			Message: fmt.Sprintf("All deployments from ResourceGroup %s were successfully scheduled", resourceGroup.Name),
@@ -227,7 +233,12 @@ func (r *ResourceGroupReconciler) Reconcile(ctx context.Context, resourceGroup *
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{}, nil
+	if currentGroupPhase == resourcesv1alpha1.DeploymentDonePhase {
+		return ctrl.Result{}, nil
+	}
+
+	// reschedule the reconciliation until the deployment is done
+	return ctrl.Result{RequeueAfter: time.Duration(5) * time.Second}, nil
 }
 
 func (r *ResourceGroupReconciler) newResourceGroupCondition(ctx context.Context, resourceGroup *resourcesv1alpha1.ResourceGroup, newCondition *metav1.Condition) (*resourcesv1alpha1.ResourceGroup, error) {

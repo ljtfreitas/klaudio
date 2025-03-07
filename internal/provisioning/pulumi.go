@@ -33,9 +33,10 @@ type pulumiProvisionerProperties struct {
 }
 
 type pulumiProvisionerGitProperties struct {
-	Repo   string  `json:"repo"`
-	Branch *string `json:"branch"`
-	Dir    *string `json:"dir"`
+	Repo              string  `json:"repo"`
+	Branch            *string `json:"branch"`
+	Dir               *string `json:"dir"`
+	IntervalInSeconds *int    `json:"intervalInSeconds"`
 }
 
 func newPulumiProvisioner(c client.Client, d *dynamic.DynamicClient, scheme *runtime.Scheme, log logr.Logger, provisioner *resourcesv1alpha1.ResourceRefProvisioner) (Provisioner, error) {
@@ -115,6 +116,40 @@ func (provisioner *PulumiProvisioner) Run(ctx context.Context, resource *resourc
 }
 
 func (provisioner *PulumiProvisioner) getOrNewStack(ctx context.Context, resource *resourcesv1alpha1.Resource) (*unstructured.Unstructured, error) {
+	stackConfig := make(map[string]any)
+	if err := json.Unmarshal(resource.Spec.Properties.Raw, &stackConfig); err != nil {
+		return nil, err
+	}
+
+	newSpec := func() map[string]any {
+		return map[string]any{
+			"envRefs": map[string]any{
+				"PULUMI_CONFIG_PASSPHRASE": map[string]any{
+					"type": "Literal",
+					"literal": map[string]any{
+						"value": "",
+					},
+				},
+			},
+			"gitAuth": map[string]any{
+				"accessToken": map[string]any{
+					"type": "Secret",
+					"secret": map[string]any{
+						"name":      "github-access-token",
+						"namespace": "default",
+						"key":       "accessToken",
+					},
+				},
+			},
+			"stack":                  fmt.Sprintf("%s.%s", resource.Spec.Placement, resource.Name),
+			"projectRepo":            provisioner.properties.Git.Repo,
+			"branch":                 provisioner.properties.Git.Branch,
+			"repoDir":                provisioner.properties.Git.Dir,
+			"resyncFrequencySeconds": ptr.To(provisioner.properties.Git.IntervalInSeconds),
+			"config":                 stackConfig,
+		}
+	}
+
 	stackGvk := schema.GroupVersionKind{
 		Group:   "pulumi.com",
 		Version: "v1",
@@ -138,42 +173,13 @@ func (provisioner *PulumiProvisioner) getOrNewStack(ctx context.Context, resourc
 
 		object := make(map[string]any)
 
-		stackConfig := make(map[string]any)
-		if err := json.Unmarshal(resource.Spec.Properties.Raw, &stackConfig); err != nil {
-			return nil, err
-		}
-
 		object["apiVersion"] = "pulumi.com/v1"
 		object["kind"] = "Stack"
 		object["metadata"] = map[string]any{
 			"name":      resource.Name,
 			"namespace": resource.Namespace,
 		}
-		object["spec"] = map[string]any{
-			"envRefs": map[string]any{
-				"PULUMI_CONFIG_PASSPHRASE": map[string]any{
-					"type": "Literal",
-					"literal": map[string]any{
-						"value": "",
-					},
-				},
-			},
-			"gitAuth": map[string]any{
-				"accessToken": map[string]any{
-					"type": "Secret",
-					"secret": map[string]any{
-						"name":      "github-access-token",
-						"namespace": "default",
-						"key":       "accessToken",
-					},
-				},
-			},
-			"stack":       fmt.Sprintf("%s.%s", resource.Spec.Placement, resource.Name),
-			"projectRepo": provisioner.properties.Git.Repo,
-			"branch":      provisioner.properties.Git.Branch,
-			"repoDir":     provisioner.properties.Git.Dir,
-			"config":      stackConfig,
-		}
+		object["spec"] = newSpec()
 
 		stack.SetUnstructuredContent(object)
 
@@ -205,6 +211,8 @@ func (provisioner *PulumiProvisioner) getOrNewStack(ctx context.Context, resourc
 		if err := provisioner.client.Create(ctx, stack); err != nil {
 			return nil, err
 		}
+	} else {
+		stack.Object["spec"] = newSpec()
 	}
 
 	return stack, nil

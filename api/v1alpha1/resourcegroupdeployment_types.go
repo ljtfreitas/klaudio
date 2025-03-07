@@ -37,27 +37,16 @@ type ResourceGroupDeploymentSpec struct {
 
 type ResourceGroupDeploymentResourcesStatuses map[string]ResourceStatus
 
-type ResourceGroupDeploymentStatusPhaseDescription string
-
-const (
-	DeploymentRunningPhase = ResourceGroupDeploymentStatusPhaseDescription("Running")
-	DeploymentDonePhase    = ResourceGroupDeploymentStatusPhaseDescription("Done")
-
-	DeploymentReadyCondition                        = "Ready"
-	DeploymentConditionReasonReconciling            = "Reconciling"
-	DeploymentConditionReasonResourceCreationFailed = "ResourceCreationFailed"
-	DeploymentConditionReasonDeploymentInProgress   = "DeploymentInProgress"
-	DeploymentConditionReasonDeploymentDone         = "DeploymentDone"
-)
+type ResourceGroupDeploymentStatusPhase string
 
 // ResourceGroupDeploymentStatus defines the observed state of ResourceGroupDeployment
 type ResourceGroupDeploymentStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	Resources  ResourceGroupDeploymentResourcesStatuses      `json:"resources,omitempty"`
-	Phase      ResourceGroupDeploymentStatusPhaseDescription `json:"phase,omitempty"`
-	Conditions []metav1.Condition                            `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
+	Resources  ResourceGroupDeploymentResourcesStatuses `json:"resources,omitempty"`
+	Phase      ResourceGroupDeploymentStatusPhase       `json:"phase,omitempty"`
+	Conditions []metav1.Condition                       `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
 }
 
 // +kubebuilder:object:root=true

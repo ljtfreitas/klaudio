@@ -46,10 +46,6 @@ spec:
           spec:
             description: ResourceRefSpec defines the desired state of ResourceRef
             properties:
-              kind:
-                type: string
-              name:
-                type: string
               provisioner:
                 properties:
                   name:
@@ -72,8 +68,6 @@ spec:
                 - type
                 type: object
             required:
-            - kind
-            - name
             - provisioner
             - schema
             type: object

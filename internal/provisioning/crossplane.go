@@ -142,6 +142,11 @@ func (provisioner *CrossplaneProvisioner) Run(ctx context.Context, resource *res
 }
 
 func (provisioner *CrossplaneProvisioner) getOrNewObj(ctx context.Context, resource *resourcesv1alpha1.Resource) (*unstructured.Unstructured, error) {
+	specProperties := make(map[string]any)
+	if err := json.Unmarshal(resource.Spec.Properties.Raw, &specProperties); err != nil {
+		return nil, err
+	}
+
 	objGv, err := schema.ParseGroupVersion(provisioner.properties.ObjectRef.ApiVersion)
 	if err != nil {
 		return nil, err
@@ -151,6 +156,9 @@ func (provisioner *CrossplaneProvisioner) getOrNewObj(ctx context.Context, resou
 	objResourceName := strings.ToLower(nameAsPlural)
 
 	objGvWithResource := objGv.WithResource(objResourceName)
+	objGvk := objGv.WithKind(provisioner.properties.ObjectRef.Kind)
+
+	provisioner.log.Info(fmt.Sprintf("trying to get object: %s, name %s", objGvk.String(), resource.Name))
 
 	obj, err := provisioner.dynamicClient.
 		Resource(objGvWithResource).
@@ -162,13 +170,10 @@ func (provisioner *CrossplaneProvisioner) getOrNewObj(ctx context.Context, resou
 			return nil, err
 		}
 
+		provisioner.log.Info(fmt.Sprintf("object %s not found. creating...", objGvWithResource.String()))
+
 		obj = &unstructured.Unstructured{}
 		obj.SetGroupVersionKind(objGv.WithKind(provisioner.properties.ObjectRef.Kind))
-
-		specProperties := make(map[string]any)
-		if err := json.Unmarshal(resource.Spec.Properties.Raw, &specProperties); err != nil {
-			return nil, err
-		}
 
 		content := make(map[string]any)
 		content["apiVersion"] = provisioner.properties.ObjectRef.ApiVersion
@@ -187,8 +192,6 @@ func (provisioner *CrossplaneProvisioner) getOrNewObj(ctx context.Context, resou
 		}
 
 		obj.SetLabels(map[string]string{
-			"name":      resource.Name,
-			"namespace": resource.Namespace,
 			resourcesv1alpha1.Group + "/managedBy.group":   resourceGkv.Group,
 			resourcesv1alpha1.Group + "/managedBy.version": resourceGkv.Version,
 			resourcesv1alpha1.Group + "/managedBy.kind":    resourceGkv.Kind,
@@ -207,6 +210,11 @@ func (provisioner *CrossplaneProvisioner) getOrNewObj(ctx context.Context, resou
 		})
 
 		if err := provisioner.client.Create(ctx, obj); err != nil {
+			return nil, err
+		}
+	} else {
+		obj.Object["spec"] = specProperties
+		if err := provisioner.client.Update(ctx, obj); err != nil {
 			return nil, err
 		}
 	}

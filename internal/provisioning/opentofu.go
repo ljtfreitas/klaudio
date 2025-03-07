@@ -36,9 +36,10 @@ type openTofuProvisionerProperties struct {
 }
 
 type openTofuProvisionerGitProperties struct {
-	Repo   string  `json:"repo"`
-	Branch *string `json:"branch"`
-	Dir    *string `json:"dir"`
+	Repo     string  `json:"repo"`
+	Branch   *string `json:"branch"`
+	Dir      *string `json:"dir"`
+	Interval *string `json:"interval"`
 }
 
 func newOpenTofuProvisioner(c client.Client, d *dynamic.DynamicClient, scheme *runtime.Scheme, log logr.Logger, provisioner *resourcesv1alpha1.ResourceRefProvisioner) (Provisioner, error) {
@@ -152,7 +153,7 @@ func (provisioner *OpenTofuProvisioner) getOrNewRepo(ctx context.Context, resour
 		Kind:    "GitRepository",
 	}
 
-	repoGvWithResource := repoGvk.GroupVersion().WithResource("gitrepo")
+	repoGvWithResource := repoGvk.GroupVersion().WithResource("gitrepositories")
 
 	repo, err := provisioner.dynamicClient.
 		Resource(repoGvWithResource).
@@ -175,7 +176,7 @@ func (provisioner *OpenTofuProvisioner) getOrNewRepo(ctx context.Context, resour
 			"namespace": resource.Namespace,
 		}
 		content["spec"] = map[string]any{
-			"interval": "60s",
+			"interval": provisioner.properties.Git.Interval,
 			"url":      provisioner.properties.Git.Repo,
 			"ref": map[string]any{
 				"branch": provisioner.properties.Git.Branch,
@@ -220,13 +221,44 @@ func (provisioner *OpenTofuProvisioner) getOrNewRepo(ctx context.Context, resour
 }
 
 func (provisioner *OpenTofuProvisioner) getOrNewTerraform(ctx context.Context, gitRepoRef string, resource *resourcesv1alpha1.Resource) (*unstructured.Unstructured, error) {
+	inputs := make(map[string]any)
+	if err := json.Unmarshal(resource.Spec.Properties.Raw, &inputs); err != nil {
+		return nil, err
+	}
+
+	terraformVars := make([]map[string]any, 0, len(inputs))
+	for name, input := range inputs {
+		terraformVars = append(terraformVars, map[string]any{
+			"name":  name,
+			"value": input,
+		})
+	}
+
+	newSpec := func() map[string]any {
+		return map[string]any{
+			"interval":    provisioner.properties.Git.Interval,
+			"approvePlan": "auto",
+			"path":        provisioner.properties.Git.Dir,
+			"sourceRef": map[string]any{
+				"kind":      "GitRepository",
+				"name":      gitRepoRef,
+				"namespace": resource.Namespace,
+			},
+			"vars": terraformVars,
+			"writeOutputsToSecret": map[string]any{
+				"name": fmt.Sprintf("%s-outputs", resource.Name),
+			},
+		}
+
+	}
+
 	terraformGvk := schema.GroupVersionKind{
 		Group:   "infra.contrib.fluxcd.io",
 		Version: "v1alpha2",
 		Kind:    "GitRepository",
 	}
 
-	terraformGvWithResource := terraformGvk.GroupVersion().WithResource("terraform")
+	terraformGvWithResource := terraformGvk.GroupVersion().WithResource("terraforms")
 
 	terraform, err := provisioner.dynamicClient.
 		Resource(terraformGvWithResource).
@@ -241,19 +273,6 @@ func (provisioner *OpenTofuProvisioner) getOrNewTerraform(ctx context.Context, g
 		terraform = &unstructured.Unstructured{}
 		terraform.SetGroupVersionKind(terraformGvk)
 
-		inputs := make(map[string]any)
-		if err := json.Unmarshal(resource.Spec.Properties.Raw, &inputs); err != nil {
-			return nil, err
-		}
-
-		terraformVars := make([]map[string]any, 0, len(inputs))
-		for name, input := range inputs {
-			terraformVars = append(terraformVars, map[string]any{
-				"name":  name,
-				"value": input,
-			})
-		}
-
 		object := make(map[string]any)
 
 		object["apiVersion"] = "infra.contrib.fluxcd.io/v1alpha2"
@@ -262,20 +281,7 @@ func (provisioner *OpenTofuProvisioner) getOrNewTerraform(ctx context.Context, g
 			"name":      resource.Name,
 			"namespace": resource.Namespace,
 		}
-		object["spec"] = map[string]any{
-			"interval":    "60s",
-			"approvePlan": "auto",
-			"path":        provisioner.properties.Git.Dir,
-			"sourceRef": map[string]any{
-				"kind":      "GitRepository",
-				"name":      gitRepoRef,
-				"namespace": resource.Namespace,
-			},
-			"vars": terraformVars,
-			"writeOutputsToSecret": map[string]any{
-				"name": fmt.Sprintf("%s-outputs", resource.Name),
-			},
-		}
+		object["spec"] = newSpec()
 
 		terraform.SetUnstructuredContent(object)
 
@@ -304,6 +310,11 @@ func (provisioner *OpenTofuProvisioner) getOrNewTerraform(ctx context.Context, g
 		})
 
 		if err := provisioner.client.Create(ctx, terraform); err != nil {
+			return nil, err
+		}
+	} else {
+		terraform.Object["spec"] = newSpec()
+		if err := provisioner.client.Update(ctx, terraform); err != nil {
 			return nil, err
 		}
 	}

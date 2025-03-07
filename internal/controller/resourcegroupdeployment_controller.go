@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -60,11 +61,11 @@ func (r *ResourceGroupDeploymentReconciler) Reconcile(ctx context.Context, deplo
 	log := log.FromContext(ctx).WithValues("resourceGroupDeployment", deployment.Name)
 
 	if len(deployment.Status.Conditions) == 0 {
-		deployment.Status.Phase = resourcesv1alpha1.DeploymentRunningPhase
+		deployment.Status.Phase = resourcesv1alpha1.DeploymentInProgressPhase
 		deploymentWithCondition, err := r.newResourceGroupDeploymentCondition(ctx, deployment, &metav1.Condition{
-			Type:    resourcesv1alpha1.ResourceGroupConditionReady,
+			Type:    resourcesv1alpha1.ConditionTypeInitializing,
 			Status:  metav1.ConditionUnknown,
-			Reason:  resourcesv1alpha1.DeploymentConditionReasonReconciling,
+			Reason:  resourcesv1alpha1.ConditionReasonReconciling,
 			Message: fmt.Sprintf("Starting reconciliation from ResourceGroupDeployment %s", deployment.Name),
 		})
 		if err != nil {
@@ -140,7 +141,20 @@ func (r *ResourceGroupDeploymentReconciler) Reconcile(ctx context.Context, deplo
 
 		log.Info(fmt.Sprintf("Processing %s...", resource.Name))
 
-		resourceNameToDeploy := fmt.Sprintf("%s.%s", deployment.Name, resource.Name)
+		// first, expand properties
+		expandedProperties, err := resource.Evaluate(args)
+		if err != nil {
+			log.Error(err, "unable to evaluate properties")
+			return ctrl.Result{}, err
+		}
+
+		rawProperties, err := json.Marshal(expandedProperties)
+		if err != nil {
+			log.Error(err, "unable to serialize resource properties")
+			return ctrl.Result{}, err
+		}
+
+		resourceNameToDeploy := fmt.Sprintf("%s.%s", deployment.Name, resource.NameAsKebabCase())
 
 		resourceToDeploy := &resourcesv1alpha1.Resource{}
 		if err := r.Get(ctx, types.NamespacedName{Namespace: deployment.Namespace, Name: resourceNameToDeploy}, resourceToDeploy); err != nil {
@@ -151,19 +165,6 @@ func (r *ResourceGroupDeploymentReconciler) Reconcile(ctx context.Context, deplo
 
 			// there is no Resource yet; just create it
 			log.Info(fmt.Sprintf("Creating Resource %s...", resourceNameToDeploy))
-
-			// first, expand properties
-			expandedProperties, err := resource.Evaluate(args)
-			if err != nil {
-				log.Error(err, "unable to evaluate properties")
-				return ctrl.Result{}, err
-			}
-
-			rawProperties, err := json.Marshal(expandedProperties)
-			if err != nil {
-				log.Error(err, "unable to serialize resource properties")
-				return ctrl.Result{}, err
-			}
 
 			resourceToDeploy.Name = resourceNameToDeploy
 			resourceToDeploy.Namespace = deployment.Namespace
@@ -188,9 +189,9 @@ func (r *ResourceGroupDeploymentReconciler) Reconcile(ctx context.Context, deplo
 				logWithResource.Error(err, fmt.Sprintf("unable to schedule Resource %s to be deployed", resourceNameToDeploy))
 
 				_, err = r.newResourceGroupDeploymentCondition(ctx, deployment, &metav1.Condition{
-					Type:    resourcesv1alpha1.DeploymentReadyCondition,
+					Type:    resourcesv1alpha1.ConditionTypeFailed,
 					Status:  metav1.ConditionFalse,
-					Reason:  resourcesv1alpha1.DeploymentConditionReasonResourceCreationFailed,
+					Reason:  resourcesv1alpha1.ConditionReasonFailed,
 					Message: fmt.Sprintf("Unable to schedule Resource %s to be deployed", resourceNameToDeploy),
 				})
 
@@ -198,9 +199,9 @@ func (r *ResourceGroupDeploymentReconciler) Reconcile(ctx context.Context, deplo
 			}
 
 			_, err = r.newResourceGroupDeploymentCondition(ctx, deployment, &metav1.Condition{
-				Type:    resourcesv1alpha1.DeploymentReadyCondition,
-				Status:  metav1.ConditionUnknown,
-				Reason:  resourcesv1alpha1.DeploymentConditionReasonDeploymentInProgress,
+				Type:    resourcesv1alpha1.ConditionTypeInProgress,
+				Status:  metav1.ConditionTrue,
+				Reason:  resourcesv1alpha1.ConditionReasonDeploymentInProgress,
 				Message: fmt.Sprintf("Resource %s, from ResourceGroupDeployment %s, was successfully scheduled to be deployed", resourceNameToDeploy, deployment.Name),
 			})
 			if err != nil {
@@ -212,10 +213,30 @@ func (r *ResourceGroupDeploymentReconciler) Reconcile(ctx context.Context, deplo
 
 			// just reschedule the reconcilation
 			return ctrl.Result{RequeueAfter: time.Duration(5) * time.Second}, nil
+		} else {
+			err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+				if err = r.Get(ctx, types.NamespacedName{Name: resourceNameToDeploy, Namespace: deployment.Namespace}, resourceToDeploy); err != nil {
+					return err
+				}
+				resourceToDeploy.Spec.Properties = &runtime.RawExtension{Raw: rawProperties}
+				return r.Update(ctx, resourceToDeploy)
+			})
+			if err != nil {
+				logWithResource.Error(err, fmt.Sprintf("unable to update spec properties from Resource %s", resourceNameToDeploy))
+
+				_, err = r.newResourceGroupDeploymentCondition(ctx, deployment, &metav1.Condition{
+					Type:    resourcesv1alpha1.ConditionTypeFailed,
+					Status:  metav1.ConditionFalse,
+					Reason:  resourcesv1alpha1.ConditionReasonFailed,
+					Message: fmt.Sprintf("unable to update spec properties from Resource %s", resourceNameToDeploy),
+				})
+
+				return ctrl.Result{}, err
+			}
 		}
 
 		// check the current deployment to resource
-		if resourceToDeploy.Status.Phase == resourcesv1alpha1.ResourceDeployingStatusPhase {
+		if resourceToDeploy.Status.Phase == resourcesv1alpha1.DeploymentInProgressPhase {
 			return ctrl.Result{RequeueAfter: time.Duration(5) * time.Second}, nil
 		}
 
@@ -231,12 +252,27 @@ func (r *ResourceGroupDeploymentReconciler) Reconcile(ctx context.Context, deplo
 
 	log.Info("Updating deployment status...")
 
+	currentConditionType := resourcesv1alpha1.ConditionTypeReady
+	currentDeploymentPhase := resourcesv1alpha1.DeploymentDonePhase
+	for _, knowResource := range knowResources {
+		if knowResource.Phase == resourcesv1alpha1.DeploymentFailedPhase {
+			currentConditionType = resourcesv1alpha1.ConditionTypeFailed
+			currentDeploymentPhase = resourcesv1alpha1.DeploymentFailedPhase
+			break
+		}
+		if knowResource.Phase == resourcesv1alpha1.DeploymentInProgressPhase {
+			currentConditionType = resourcesv1alpha1.ConditionTypeInProgress
+			currentDeploymentPhase = resourcesv1alpha1.DeploymentInProgressPhase
+			break
+		}
+	}
+
 	deployment.Status.Resources = knowResources
-	deployment.Status.Phase = resourcesv1alpha1.DeploymentDonePhase
+	deployment.Status.Phase = resourcesv1alpha1.ResourceGroupDeploymentStatusPhase(currentDeploymentPhase)
 	_, err = r.newResourceGroupDeploymentCondition(ctx, deployment, &metav1.Condition{
-		Type:    resourcesv1alpha1.DeploymentReadyCondition,
+		Type:    currentConditionType,
 		Status:  metav1.ConditionTrue,
-		Reason:  "DeploymentDone",
+		Reason:  resourcesv1alpha1.StatusPhaseToReason(currentDeploymentPhase),
 		Message: fmt.Sprintf("Resources from ResourceGroupDeployment %s were successfully scheduled to be deployed", deployment.Name),
 	})
 	if err != nil {
@@ -244,9 +280,13 @@ func (r *ResourceGroupDeploymentReconciler) Reconcile(ctx context.Context, deplo
 		return ctrl.Result{}, err
 	}
 
-	log.Info("Deployment finished.")
+	if currentDeploymentPhase == resourcesv1alpha1.DeploymentDonePhase {
+		log.Info("Deployment finished.")
+		return ctrl.Result{}, nil
+	}
 
-	return ctrl.Result{}, nil
+	// reschedule the reconciliation until the deployment is done
+	return ctrl.Result{RequeueAfter: time.Duration(5) * time.Second}, nil
 }
 
 func (r *ResourceGroupDeploymentReconciler) newResourceGroupDeploymentCondition(ctx context.Context, resourceGroupDeployment *resourcesv1alpha1.ResourceGroupDeployment, newCondition *metav1.Condition) (*resourcesv1alpha1.ResourceGroupDeployment, error) {

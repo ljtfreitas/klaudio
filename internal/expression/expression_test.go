@@ -160,7 +160,7 @@ func Test_Expression(t *testing.T) {
 }
 
 func Test_ExpressionDependencies(t *testing.T) {
-	t.Run("We should be able to read dependencies from a cel expression", func(t *testing.T) {
+	t.Run("We should be able to read dependencies from an expression", func(t *testing.T) {
 
 		t.Run("We are looking for resources dependencies...", func(t *testing.T) {
 			expression, err := Parse(`${resources.sample.whatever}`)
@@ -182,7 +182,7 @@ func Test_ExpressionDependencies(t *testing.T) {
 			assert.Equal(t, []string{"refs.sample"}, dependencies)
 		})
 
-		t.Run("Constant cel expressions doesn't have dependencies.", func(t *testing.T) {
+		t.Run("Constant expressions doesn't have dependencies.", func(t *testing.T) {
 			expression, err := Parse(`${"hello"}`)
 
 			assert.NoError(t, err)
@@ -190,6 +190,29 @@ func Test_ExpressionDependencies(t *testing.T) {
 			dependencies := expression.Dependencies()
 
 			assert.Empty(t, dependencies)
+		})
+
+		t.Run("Escaped dependencies should be detected.", func(t *testing.T) {
+
+			t.Run("...for resources", func(t *testing.T) {
+				expression, err := Parse(`${resources["sample"].whatever}`)
+
+				assert.NoError(t, err)
+
+				dependencies := expression.Dependencies()
+
+				assert.Equal(t, []string{"resources.sample"}, dependencies)
+			})
+
+			t.Run("...and for references", func(t *testing.T) {
+				expression, err := Parse(`${refs["sample"].whatever}`)
+
+				assert.NoError(t, err)
+
+				dependencies := expression.Dependencies()
+
+				assert.Equal(t, []string{"refs.sample"}, dependencies)
+			})
 		})
 	})
 

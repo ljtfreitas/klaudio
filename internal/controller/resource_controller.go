@@ -60,11 +60,11 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, resource *resourcesv
 	logWithResource := log.FromContext(ctx).WithValues("resource", resource.Name)
 
 	if len(resource.Status.Conditions) == 0 {
-		resource.Status.Phase = resourcesv1alpha1.ResourceDeployingStatusPhase
+		resource.Status.Phase = resourcesv1alpha1.DeploymentInProgressPhase
 		resourceWithCondition, err := r.newResourceCondition(ctx, resource, &metav1.Condition{
-			Type:    resourcesv1alpha1.ResourceConditionReady,
+			Type:    resourcesv1alpha1.ConditionTypeInProgress,
 			Status:  metav1.ConditionUnknown,
-			Reason:  resourcesv1alpha1.ResourceConditionReasonReconciling,
+			Reason:  resourcesv1alpha1.ConditionReasonReconciling,
 			Message: fmt.Sprintf("Starting reconciliation from Resource %s", resource.Name),
 		})
 		if err != nil {
@@ -88,13 +88,29 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, resource *resourcesv
 	provisionerFactory, err := provisioning.SelectByName(string(provisionerName))
 	if err != nil {
 		logWithProvisioner.Error(err, fmt.Sprintf("unsupported ResourceRef provisioner: %s", resourceRefProvisioner))
-		return ctrl.Result{Requeue: false}, nil
+
+		_, err := r.newResourceCondition(ctx, resource, &metav1.Condition{
+			Type:    resourcesv1alpha1.ConditionTypeFailed,
+			Status:  metav1.ConditionFalse,
+			Reason:  resourcesv1alpha1.ConditionReasonFailed,
+			Message: fmt.Sprintf("Unsupported ResourceRef provisioner: %s", provisionerName),
+		})
+
+		return ctrl.Result{Requeue: false}, err
 	}
 
 	provisioner, err := provisionerFactory(r.Client, r.DynamicClient, r.Scheme, logWithProvisioner, &resourceRef.Spec.Provisioner)
 	if err != nil {
 		logWithProvisioner.Error(err, fmt.Sprintf("unsupported ResourceRef provisioner: %s; unable to create a Provisioner instance", provisionerName))
-		return ctrl.Result{Requeue: false}, nil
+
+		_, err := r.newResourceCondition(ctx, resource, &metav1.Condition{
+			Type:    resourcesv1alpha1.ConditionTypeFailed,
+			Status:  metav1.ConditionFalse,
+			Reason:  resourcesv1alpha1.ConditionReasonFailed,
+			Message: fmt.Sprintf("Unsupported ResourceRef provisioner: %s", provisionerName),
+		})
+
+		return ctrl.Result{Requeue: false}, err
 	}
 
 	logWithProvisioner.Info(fmt.Sprintf("Running provisioner: %s", provisionerName))
@@ -103,6 +119,14 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, resource *resourcesv
 
 	if err != nil {
 		logWithProvisioner.Error(err, fmt.Sprintf("failed to run %s provisioner", provisionerName))
+
+		_, err := r.newResourceCondition(ctx, resource, &metav1.Condition{
+			Type:    resourcesv1alpha1.ConditionTypeFailed,
+			Status:  metav1.ConditionFalse,
+			Reason:  resourcesv1alpha1.ConditionReasonFailed,
+			Message: fmt.Sprintf("Failed to run provisioner: %s", provisionerName),
+		})
+
 		return ctrl.Result{Requeue: false}, err
 	}
 
@@ -114,7 +138,7 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, resource *resourcesv
 
 	phase, condition := statusToCondition(status, resource)
 
-	resource.Status.Phase = phase
+	resource.Status.Phase = resourcesv1alpha1.ResourceStatusDescription(phase)
 
 	if status.Resource != nil {
 		resource.Status.Provisioner = resourcesv1alpha1.ResourceStatusProvisioner{
@@ -145,27 +169,27 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, resource *resourcesv
 	return ctrl.Result{}, nil
 }
 
-func statusToCondition(status *provisioning.ProvisionedResourceStatus, resource *resourcesv1alpha1.Resource) (resourcesv1alpha1.ResourceStatusDescription, *metav1.Condition) {
+func statusToCondition(status *provisioning.ProvisionedResourceStatus, resource *resourcesv1alpha1.Resource) (string, *metav1.Condition) {
 	switch status.State {
 	case provisioning.ProvisionedResourceSuccessState:
-		return resourcesv1alpha1.ResourceDoneStatusPhase, &metav1.Condition{
-			Type:    resourcesv1alpha1.ResourceConditionReady,
+		return resourcesv1alpha1.DeploymentDonePhase, &metav1.Condition{
+			Type:    resourcesv1alpha1.ConditionTypeReady,
 			Status:  metav1.ConditionTrue,
-			Reason:  resourcesv1alpha1.ResourceConditionReasonDeploymentDone,
+			Reason:  resourcesv1alpha1.ConditionReasonDeploymentDone,
 			Message: fmt.Sprintf("Deployment from Resource %s was successfully finished", resource.Name),
 		}
 	case provisioning.ProvisionedResourceFailedState:
-		return resourcesv1alpha1.ResourceFailedStatusPhase, &metav1.Condition{
-			Type:    resourcesv1alpha1.ResourceConditionReady,
+		return resourcesv1alpha1.DeploymentFailedPhase, &metav1.Condition{
+			Type:    resourcesv1alpha1.ConditionTypeFailed,
 			Status:  metav1.ConditionFalse,
-			Reason:  resourcesv1alpha1.ResourceConditionReasonDeploymentFailed,
+			Reason:  resourcesv1alpha1.ConditionReasonDeploymentFailed,
 			Message: fmt.Sprintf("Deployment from Resource %s failed", resource.Name),
 		}
 	default:
-		return resourcesv1alpha1.ResourceDeployingStatusPhase, &metav1.Condition{
-			Type:    resourcesv1alpha1.ResourceConditionReady,
+		return resourcesv1alpha1.DeploymentInProgressPhase, &metav1.Condition{
+			Type:    resourcesv1alpha1.ConditionTypeReady,
 			Status:  metav1.ConditionUnknown,
-			Reason:  resourcesv1alpha1.ResourceConditionReasonDeploymentInProgress,
+			Reason:  resourcesv1alpha1.ConditionReasonDeploymentInProgress,
 			Message: fmt.Sprintf("Deployment from Resource %s is running...", resource.Name),
 		}
 	}

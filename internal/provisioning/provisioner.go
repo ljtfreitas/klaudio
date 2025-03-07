@@ -23,6 +23,8 @@ func SelectByName(name string) (ProvisionerFactory, error) {
 		return newPulumiProvisioner, nil
 	case OpenTofuProvisionerName:
 		return newOpenTofuProvisioner, nil
+	case CrossplaneProvisionerName:
+		return newCrossplaneProvisioner, nil
 
 	default:
 		return nil, fmt.Errorf("unsupported provisioner: %s", name)

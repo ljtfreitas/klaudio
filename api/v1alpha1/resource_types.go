@@ -36,19 +36,6 @@ type ResourceSpec struct {
 
 type ResourceStatusDescription string
 
-const (
-	ResourceDeployingStatusPhase = ResourceStatusDescription("Deploying")
-	ResourceFailedStatusPhase    = ResourceStatusDescription("Failed")
-	ResourceDoneStatusPhase      = ResourceStatusDescription("Done")
-
-	ResourceConditionReady = "Ready"
-
-	ResourceConditionReasonReconciling          = "Reconciling"
-	ResourceConditionReasonDeploymentInProgress = "DeploymentInProgress"
-	ResourceConditionReasonDeploymentDone       = "DeploymentDone"
-	ResourceConditionReasonDeploymentFailed     = "DeploymentFailed"
-)
-
 type ResourceStatusProvisioner struct {
 	Resource ResourceStatusProvisionerResource `json:"resource,omitempty"`
 	State    string                            `json:"state,omitempty"`

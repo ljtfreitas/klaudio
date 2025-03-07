@@ -57,17 +57,17 @@ type ResourceGroupDeploymentStatuses map[string]ResourceGroupDeploymentStatus
 
 type ResourceGroupStatusPhaseDescription string
 
-const (
-	ResourceGroupDeploymentInProgressPhase = ResourceGroupStatusPhaseDescription("DeploymentInProgress")
-	ResourceGroupDeploymentDonePhase       = ResourceGroupStatusPhaseDescription("DeploymentDone")
+// const (
+// 	ResourceGroupDeploymentInProgressPhase = ResourceGroupStatusPhaseDescription("DeploymentInProgress")
+// 	ResourceGroupDeploymentDonePhase       = ResourceGroupStatusPhaseDescription("DeploymentDone")
 
-	ResourceGroupConditionReady = "Ready"
+// 	ResourceGroupConditionReady = "Ready"
 
-	ResourceGroupConditionReasonReconciling             = "Reconciling"
-	ResourceGroupConditionReasonDeploymentInProgress    = "DeploymentInProgress"
-	ResourceGroupConditionReasonDeploymentDone          = "DeploymentDone"
-	ResourceGroupConditionReasonNamespaceCreationFailed = "NamespaceCreationFailed"
-)
+// 	ResourceGroupConditionReasonReconciling             = "Reconciling"
+// 	ResourceGroupConditionReasonDeploymentInProgress    = "DeploymentInProgress"
+// 	ResourceGroupConditionReasonDeploymentDone          = "DeploymentDone"
+// 	ResourceGroupConditionReasonNamespaceCreationFailed = "NamespaceCreationFailed"
+// )
 
 // ResourceGroupStatus defines the observed state of ResourceGroup
 type ResourceGroupStatus struct {

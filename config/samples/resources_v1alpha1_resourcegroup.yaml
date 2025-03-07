@@ -4,55 +4,18 @@ metadata:
   labels:
     app.kubernetes.io/name: klaudio
     app.kubernetes.io/managed-by: kustomize
-  name: a-real-resource-group
+  name: my-resource-group
 spec:
   resources:
-    - name: resource-one
-      resourceRef: resource-one-ref
+    - name: resourceOne
+      resourceRef: pulumi-resource
       properties:
-        name: "Tiago de Freitas Lima"
-# --
-# apiVersion: resources.klaudio.nubank.io/v1alpha1
-# kind: ResourceGroupDeployment
-# metadata:
-#   labels:
-#     app.kubernetes.io/name: klaudio
-#     app.kubernetes.io/managed-by: kustomize
-#   name: a-real-infrastructure
-# spec:
-#   placement: account-1
-#   resources:
-#     - name: a-real-resource-one
-#       resourceRef: an-infrastructure-resource
-#       properties:
-#         name: just-a-name
-#     - name: a-real-resource-two
-#       resourceRef: an-infrastructure-resource
-#       properties:
-#         name: ${resources["a-real-resource-one"].status.outputs.name}
-# --
-# apiVersion: resources.klaudio.nubank.io/v1alpha1
-# kind: Resource
-# metadata:
-#   labels:
-#     app.kubernetes.io/name: klaudio
-#     app.kubernetes.io/managed-by: kustomize
-#   name: a-real-infrastructure
-# spec:
-#   name: a-real-resource-one
-#   resourceRef: an-infrastructure-resource
-#   properties:
-#     name: just-a-name
-# --
-# apiVersion: resources.klaudio.nubank.io/v1alpha1
-# kind: Resource
-# metadata:
-#   labels:
-#     app.kubernetes.io/name: klaudio
-#     app.kubernetes.io/managed-by: kustomize
-#   name: a-real-infrastructure
-# spec:
-#   name: a-real-resource-one
-#   resourceRef: an-infrastructure-resource
-#   properties:
-#     name: just-a-name
+        name: "Tiago"
+    - name: resourceTwo
+      resourceRef: opentofu-resource
+      properties:
+        name: ${resources.resourceOne.status.outputs.name}
+    - name: resourceThree
+      resourceRef: crossplane-resource
+      properties:
+        name: ${resources.resourceOne.status.outputs.name}

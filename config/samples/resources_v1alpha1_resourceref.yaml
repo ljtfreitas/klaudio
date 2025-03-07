@@ -3,10 +3,31 @@ kind: ResourceRef
 metadata:
   labels:
     app.kubernetes.io/name: klaudio
-  name: resource-one-ref
+  name: pulumi-resource
 spec:
-  name: resource-one-ref
-  kind: basic-infrastructure
+  provisioner:
+    name: pulumi
+    properties:
+      git:
+        repo: https://github.com/ljtfreitas/pulumi-sample-project
+        branch: main
+        dir: just-a-pet/
+        intervalInSeconds: 60
+  schema:
+    type: object
+    properties:
+      name:
+        type: string
+        description: just a variable called 'name' :)
+
+---
+apiVersion: resources.klaudio.nubank.io/v1alpha1
+kind: ResourceRef
+metadata:
+  labels:
+    app.kubernetes.io/name: klaudio
+  name: opentofu-resource
+spec:
   provisioner:
     name: opentofu
     properties:
@@ -14,6 +35,27 @@ spec:
         repo: https://github.com/ljtfreitas/opentofu-sample-project
         branch: main
         dir: random/
+        interval: 60s
+  schema:
+    type: object
+    properties:
+      name:
+        type: string
+        description: just a variable called 'name' :)
+---
+apiVersion: resources.klaudio.nubank.io/v1alpha1
+kind: ResourceRef
+metadata:
+  labels:
+    app.kubernetes.io/name: klaudio
+  name: crossplane-resource
+spec:
+  provisioner:
+    name: crossplane
+    properties:
+      objectRef:
+        apiVersion: api-extensions.sample.org/v1alpha1
+        kind: NullResource
   schema:
     type: object
     properties:

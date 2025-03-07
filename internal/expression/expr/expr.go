@@ -12,6 +12,9 @@ var (
 	exprExpressionRe       = regexp.MustCompile(`\$\{([^}]+)\}`)
 	resourcesExpressionRe  = regexp.MustCompile(`(resources\.[^.]+)\.`)
 	referencesExpressionRe = regexp.MustCompile(`(refs\.[^.]+)\.`)
+
+	resourcesEscapedExpressionRe  = regexp.MustCompile(`(resources)\["([^"]+)"\]`)
+	referencesEscapedExpressionRe = regexp.MustCompile(`(refs)\["([^"]+)"\]`)
 )
 
 func SearchExpressions(expression string) []string {
@@ -54,6 +57,18 @@ func (e ExprExpression) Dependencies() []string {
 	matches = referencesExpressionRe.FindStringSubmatch(e.Source())
 	if len(matches) != 0 {
 		dependencies = append(dependencies, matches[1])
+	}
+
+	if len(dependencies) == 0 {
+		matches = resourcesEscapedExpressionRe.FindStringSubmatch(e.Source())
+		if len(matches) > 2 {
+			dependencies = append(dependencies, fmt.Sprintf("%s.%s", matches[1], matches[2]))
+		}
+
+		matches = referencesEscapedExpressionRe.FindStringSubmatch(e.Source())
+		if len(matches) > 2 {
+			dependencies = append(dependencies, fmt.Sprintf("%s.%s", matches[1], matches[2]))
+		}
 	}
 
 	return dependencies

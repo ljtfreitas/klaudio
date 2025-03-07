@@ -7,6 +7,7 @@ import (
 	"regexp"
 
 	"github.com/dominikbraun/graph"
+	"github.com/gobuffalo/flect"
 	api "github.com/nubank/klaudio/api/v1alpha1"
 	"github.com/nubank/klaudio/internal/expression"
 	"github.com/nubank/klaudio/internal/refs"
@@ -104,6 +105,10 @@ type Resource struct {
 	Ref          *api.ResourceRef
 	properties   *ResourceProperties
 	dependencies []string
+}
+
+func (r *Resource) NameAsKebabCase() string {
+	return flect.Dasherize(r.Name)
 }
 
 func (r *Resource) Evaluate(args *ResourcePropertiesArgs) (ExpandedResourceProperties, error) {
@@ -222,7 +227,6 @@ func (r *ResourceGroup) Graph() ([]string, error) {
 
 	for name, resource := range r.all {
 		for _, dependency := range resource.dependencies {
-			fmt.Printf("vertex %s, edge %s\n", name, dependency)
 			err := resourcesDag.AddEdge(dependency, vertexNameFn(name))
 			if err != nil {
 				return nil, err
@@ -269,6 +273,7 @@ func newResourceProperties(properties map[string]any) (*ResourceProperties, erro
 		if err != nil {
 			return nil, fmt.Errorf("unable to read properties from field %s: %w", name, err)
 		}
+
 		propertiesWithExpressions[name] = elementWithExpressions
 
 		dependencies = dependencies.Insert(elementWithExpressions.Dependencies()...)

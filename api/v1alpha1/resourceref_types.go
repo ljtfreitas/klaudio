@@ -29,8 +29,6 @@ type ResourceRefSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	Name        string                 `json:"name"`
-	Kind        string                 `json:"kind"`
 	Provisioner ResourceRefProvisioner `json:"provisioner"`
 	Schema      ResourceRefSchema      `json:"schema"`
 }
@@ -58,7 +56,7 @@ type ResourceRefSchema struct {
 type ResourceRefStatusDescription string
 
 const (
-	ResourceRefStatusDescriptionReady = "Ready"
+	ResourceRefStatusReady ResourceRefStatusDescription = "Ready"
 )
 
 // ResourceRefStatus defines the observed state of ResourceRef
